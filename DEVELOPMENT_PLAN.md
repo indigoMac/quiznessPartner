@@ -49,29 +49,43 @@ This document tracks all major development steps, milestones, and their sub-task
 
 ## 5. Infrastructure & DevOps
 
-- [ ] Add GitHub Actions for CI (run tests on push)
-- [ ] Add pre-commit hooks (Black, flake8, isort)
+- [x] Set up Git repository
+- [x] Create GitHub workflow for CI/CD
+- [x] Add production Docker configuration
 - [x] Add environment variable documentation
 - [x] Add production Docker optimizations
+- [ ] Deploy to cloud provider
 
-## 6. Bug Fixes & Test Coverage (Current Phase)
+## 6. UI/UX Improvements (Current Phase)
+
+- [x] Refine color scheme and typography
+- [x] Add loading animations and transitions
+- [x] Improve mobile responsiveness
+- [x] Add error handling with user-friendly messages
+- [x] Implement dark/light mode toggle
+- [x] Enhance component styling
+- [ ] Add progress indicators during quiz generation
+- [ ] Enhance quiz result visualization
+- [ ] Further improve accessibility (ARIA attributes, keyboard navigation)
+
+## 7. Testing & Quality Assurance
 
 - [x] Fix CORS issues in the backend
 - [x] Improve error handling in AI quiz generation
-- [x] Fix API endpoint issues
 - [x] Set up basic test infrastructure
 - [ ] Increase test coverage to at least 70%
-- [ ] Fix remaining UI/UX issues
 - [ ] Add integration tests for complete flows
+- [ ] Implement end-to-end testing with Cypress
 
-## 7. Documentation & Polish
+## 8. Documentation & Polish
 
-- [ ] Update README with usage instructions
+- [x] Create detailed README
+- [x] Document GitHub setup process
 - [ ] Add API documentation (FastAPI docs)
 - [ ] Add code comments and docstrings
 - [ ] Add screenshots/gifs to README
 
-## 8. Future Features (Post-MVP)
+## 9. Future Features (Post-MVP)
 
 - [ ] User authentication & saved progress
 - [ ] Support for more file types (Word, HTML, etc.)

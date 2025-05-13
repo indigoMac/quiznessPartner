@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import HomePage from "./pages/HomePage";
 import QuizPage from "./pages/QuizPage";
+import TestComponent from "./components/TestComponent";
 import "./App.css";
 
 // Create a client
@@ -27,6 +28,8 @@ function App() {
       if (quizMatch && quizMatch[1]) {
         setCurrentPage("quiz");
         setQuizId(quizMatch[1]);
+      } else if (path === "/test") {
+        setCurrentPage("test");
       } else {
         setCurrentPage("home");
         setQuizId(null);
@@ -49,6 +52,8 @@ function App() {
     switch (currentPage) {
       case "quiz":
         return quizId ? <QuizPage quizId={quizId} /> : <HomePage />;
+      case "test":
+        return <TestComponent />;
       case "home":
       default:
         return <HomePage />;
