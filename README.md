@@ -1,5 +1,8 @@
 # Quizness Partner
 
+[![CI/CD](https://github.com/mackenziecox/quiznessPartner/actions/workflows/ci.yml/badge.svg)](https://github.com/mackenziecox/quiznessPartner/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/mackenziecox/quiznessPartner/branch/main/graph/badge.svg)](https://codecov.io/gh/mackenziecox/quiznessPartner)
+
 An AI-powered quiz generation application that creates quizzes from uploaded documents or text content. Built with FastAPI, React, and OpenAI.
 
 ## Features
