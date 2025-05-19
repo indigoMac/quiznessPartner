@@ -43,7 +43,7 @@ jobs:
 
       - name: Run tests with coverage
         env:
-          DATABASE_URL: sqlite:///./test.db
+          DATABASE_URI: postgresql://postgres:postgres@localhost:5432/quizness_test
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'test_key' }}
           ENVIRONMENT: test
         run: |
@@ -73,8 +73,8 @@ jobs:
       - name: Install dependencies
         run: |
           cd frontend
-          npm ci
-          npm install @vitest/coverage-v8
+          npm install
+          npm install @vitest/coverage-v8 --save-dev
 
       - name: Run tests with coverage
         run: |
