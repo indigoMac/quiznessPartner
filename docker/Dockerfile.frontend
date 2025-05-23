@@ -1,13 +1,13 @@
 # Build stage
-FROM node:18-alpine as build
+FROM node:18-alpine AS build
 
 WORKDIR /app
 
 # Copy package files
 COPY frontend/package*.json ./
 
-# Install dependencies with clean slate
-RUN npm ci
+# Use npm install instead of npm ci to allow updating the lock file
+RUN npm install
 
 # Copy the rest of the application
 COPY frontend/ .
