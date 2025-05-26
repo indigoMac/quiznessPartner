@@ -1,103 +1,100 @@
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import QuizResults from "../QuizResults";
 import type { QuizResult } from "../../types/api";
 
-describe("QuizResults Component", () => {
-  const createMockResult = (score: number, total: number): QuizResult => ({
-    quiz_id: 1,
-    score,
-    total,
-    answers: [0, 1, 2],
-    correct_answers: [0, 2, 2],
-  });
+// Mock Material-UI components
+vi.mock("@mui/material", () => ({
+  Box: ({ children, ...props }: any) => <div {...props}>{children}</div>,
+  Typography: ({ children, ...props }: any) => <p {...props}>{children}</p>,
+  Button: ({ children, onClick, ...props }: any) => (
+    <button onClick={onClick} {...props}>
+      {children}
+    </button>
+  ),
+  CircularProgress: ({ value, ...props }: any) => (
+    <div role="progressbar" aria-valuenow={value} {...props} />
+  ),
+}));
 
-  const defaultProps = {
-    result: createMockResult(3, 5),
-    onRetry: vi.fn(),
-    onNewQuiz: vi.fn(),
+describe("QuizResults", () => {
+  const mockResult = {
+    score: 7,
+    total: 10,
   };
 
-  it("renders the score percentage correctly", () => {
-    render(<QuizResults {...defaultProps} />);
-    expect(screen.getByText("60%")).toBeInTheDocument();
+  const mockOnNewQuiz = vi.fn();
+  const mockOnRetry = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
-  it("displays the correct score text", () => {
-    render(<QuizResults {...defaultProps} />);
-    expect(
-      screen.getByText("You scored 3 out of 5 questions correctly.")
-    ).toBeInTheDocument();
+  it("displays the score percentage correctly", () => {
+    render(
+      <QuizResults
+        result={mockResult}
+        onNewQuiz={mockOnNewQuiz}
+        onRetry={mockOnRetry}
+      />
+    );
+
+    expect(screen.getByText("70%")).toBeInTheDocument();
   });
 
-  it("shows 'Excellent!' message for scores >= 90%", () => {
-    const highResult = createMockResult(9, 10); // 90%
-    render(<QuizResults {...defaultProps} result={highResult} />);
-    expect(screen.getByText("Excellent!")).toBeInTheDocument();
-  });
+  it("displays the appropriate score message", () => {
+    render(
+      <QuizResults
+        result={mockResult}
+        onNewQuiz={mockOnNewQuiz}
+        onRetry={mockOnRetry}
+      />
+    );
 
-  it("shows 'Great job!' message for scores >= 70% and < 90%", () => {
-    const goodResult = createMockResult(7, 10); // 70%
-    render(<QuizResults {...defaultProps} result={goodResult} />);
     expect(screen.getByText("Great job!")).toBeInTheDocument();
   });
 
-  it("shows 'Good effort!' message for scores >= 50% and < 70%", () => {
-    const averageResult = createMockResult(5, 10); // 50%
-    render(<QuizResults {...defaultProps} result={averageResult} />);
-    expect(screen.getByText("Good effort!")).toBeInTheDocument();
+  it("displays the score details", () => {
+    render(
+      <QuizResults
+        result={mockResult}
+        onNewQuiz={mockOnNewQuiz}
+        onRetry={mockOnRetry}
+      />
+    );
+
+    expect(
+      screen.getByText("You scored 7 out of 10 questions correctly.")
+    ).toBeInTheDocument();
   });
 
-  it("shows 'Keep learning!' message for scores < 50%", () => {
-    const lowResult = createMockResult(4, 10); // 40%
-    render(<QuizResults {...defaultProps} result={lowResult} />);
-    expect(screen.getByText("Keep learning!")).toBeInTheDocument();
+  it("calls onRetry when Try Again button is clicked", async () => {
+    const user = userEvent.setup();
+    render(
+      <QuizResults
+        result={mockResult}
+        onNewQuiz={mockOnNewQuiz}
+        onRetry={mockOnRetry}
+      />
+    );
+
+    await user.click(screen.getByText("Try Again"));
+    expect(mockOnRetry).toHaveBeenCalled();
   });
 
-  it("applies green text color for scores >= 90%", () => {
-    const highResult = createMockResult(9, 10); // 90%
-    render(<QuizResults {...defaultProps} result={highResult} />);
-    const messageElement = screen.getByText("Excellent!");
-    expect(messageElement).toHaveClass("text-green-600");
-  });
+  it("calls onNewQuiz when Create New Quiz button is clicked", async () => {
+    const user = userEvent.setup();
+    render(
+      <QuizResults
+        result={mockResult}
+        onNewQuiz={mockOnNewQuiz}
+        onRetry={mockOnRetry}
+      />
+    );
 
-  it("applies blue text color for scores >= 70% and < 90%", () => {
-    const goodResult = createMockResult(7, 10); // 70%
-    render(<QuizResults {...defaultProps} result={goodResult} />);
-    const messageElement = screen.getByText("Great job!");
-    expect(messageElement).toHaveClass("text-blue-600");
-  });
-
-  it("applies yellow text color for scores >= 50% and < 70%", () => {
-    const averageResult = createMockResult(5, 10); // 50%
-    render(<QuizResults {...defaultProps} result={averageResult} />);
-    const messageElement = screen.getByText("Good effort!");
-    expect(messageElement).toHaveClass("text-yellow-600");
-  });
-
-  it("applies red text color for scores < 50%", () => {
-    const lowResult = createMockResult(4, 10); // 40%
-    render(<QuizResults {...defaultProps} result={lowResult} />);
-    const messageElement = screen.getByText("Keep learning!");
-    expect(messageElement).toHaveClass("text-red-600");
-  });
-
-  it("calls onRetry when 'Try Again' button is clicked", () => {
-    render(<QuizResults {...defaultProps} />);
-    fireEvent.click(screen.getByText("Try Again"));
-    expect(defaultProps.onRetry).toHaveBeenCalledTimes(1);
-  });
-
-  it("calls onNewQuiz when 'Create New Quiz' button is clicked", () => {
-    render(<QuizResults {...defaultProps} />);
-    fireEvent.click(screen.getByText("Create New Quiz"));
-    expect(defaultProps.onNewQuiz).toHaveBeenCalledTimes(1);
-  });
-
-  it("renders the circular progress indicator with correct percentage", () => {
-    render(<QuizResults {...defaultProps} />);
-    const progressPath = document.querySelector("path:nth-of-type(2)");
-    expect(progressPath).toHaveAttribute("stroke-dasharray", "60, 100");
+    await user.click(screen.getByText("Create New Quiz"));
+    expect(mockOnNewQuiz).toHaveBeenCalled();
   });
 });

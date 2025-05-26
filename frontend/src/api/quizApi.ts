@@ -15,6 +15,16 @@ const api = axios.create({
   baseURL: API_URL,
 });
 
+// Add request interceptor to include auth token
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem("token");
+  if (token) {
+    config.headers = config.headers || {};
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 // Generate a quiz from text
 export const generateQuiz = async (
   data: GenerateQuizForm

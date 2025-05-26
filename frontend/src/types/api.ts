@@ -1,5 +1,6 @@
 // Quiz question types
 export interface QuizQuestion {
+  id: number;
   question: string;
   options: string[];
   correct_answer: number;
@@ -8,14 +9,16 @@ export interface QuizQuestion {
 // Quiz response from API
 export interface QuizResponse {
   id: string;
-  questions: QuizQuestion[];
+  title: string;
   topic?: string;
+  questions: QuizQuestion[];
+  created_at?: string;
 }
 
 // Quiz answer submission
 export interface AnswerSubmission {
   quiz_id: number;
-  answers: number[];
+  answers: number[]; // Array of selected answer indices
 }
 
 // Quiz result response

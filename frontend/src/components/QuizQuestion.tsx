@@ -1,22 +1,22 @@
-import React from "react";
+import type { FC } from "react";
 import type { QuizQuestion as QuizQuestionType } from "../types/api";
 
 interface QuizQuestionProps {
   question: QuizQuestionType;
   questionNumber: number;
-  selectedAnswer: number | null;
+  selectedAnswer?: number;
   onSelectAnswer: (index: number) => void;
   showResults?: boolean;
 }
 
-const QuizQuestion: React.FC<QuizQuestionProps> = ({
+const QuizQuestion: FC<QuizQuestionProps> = ({
   question,
   questionNumber,
   selectedAnswer,
   onSelectAnswer,
   showResults = false,
 }) => {
-  const getOptionClasses = (index: number) => {
+  const getOptionClasses = (index: number): string => {
     const baseClasses =
       "border rounded-lg p-4 mb-3 transition-all duration-200 cursor-pointer hover:shadow-md";
 
@@ -46,11 +46,13 @@ const QuizQuestion: React.FC<QuizQuestionProps> = ({
         {question.question}
       </h3>
       <div className="space-y-3">
-        {question.options.map((option, index) => (
-          <div
+        {question.options.map((option: string, index: number) => (
+          <button
             key={index}
+            type="button"
             className={getOptionClasses(index)}
             onClick={() => !showResults && onSelectAnswer(index)}
+            disabled={showResults}
           >
             <div className="flex items-start">
               <div className="flex-shrink-0 mt-0.5">
@@ -73,7 +75,7 @@ const QuizQuestion: React.FC<QuizQuestionProps> = ({
                   )}
                 </div>
               </div>
-              <div className="ml-3 flex-grow">
+              <div className="ml-3 flex-grow text-left">
                 <p className="text-base text-gray-700 dark:text-gray-300">
                   {option}
                 </p>
@@ -121,7 +123,7 @@ const QuizQuestion: React.FC<QuizQuestionProps> = ({
                   </div>
                 )}
             </div>
-          </div>
+          </button>
         ))}
       </div>
     </div>

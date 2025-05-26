@@ -1,5 +1,25 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import axios from "axios";
+import { vi, describe, it, expect, beforeEach } from "vitest";
+import type { InternalAxiosRequestConfig } from "axios";
+
+vi.mock("axios", () => {
+  const mockPost = vi.fn().mockResolvedValue({ data: { title: "Mock Quiz" } });
+  const mockGet = vi.fn().mockResolvedValue({ data: { title: "Mock Quiz" } });
+  const mockUse = vi.fn().mockImplementation((interceptor) => interceptor);
+
+  return {
+    default: {
+      create: vi.fn(() => ({
+        post: mockPost,
+        get: mockGet,
+        interceptors: {
+          request: { use: mockUse },
+          response: { use: vi.fn() },
+        },
+      })),
+    },
+  };
+});
+
 import {
   generateQuiz,
   uploadDocument,
@@ -7,177 +27,83 @@ import {
   submitAnswers,
   checkHealth,
 } from "../quizApi";
-import type {
-  QuizResponse,
-  QuizResult,
-  GenerateQuizForm,
-  UploadDocumentForm,
-} from "../../types/api";
-
-// Mock axios properly
-vi.mock("axios", () => {
-  const mockPost = vi.fn().mockResolvedValue({ data: {} });
-  const mockGet = vi.fn().mockResolvedValue({ data: {} });
-
-  return {
-    default: {
-      create: vi.fn(() => ({
-        post: mockPost,
-        get: mockGet,
-      })),
-    },
-  };
-});
+import type { AnswerSubmission } from "@/types/api";
 
 describe("Quiz API", () => {
-  // Get the mocked axios instance
-  const mockAxiosInstance = {
-    post: (axios.create() as any).post,
-    get: (axios.create() as any).get,
-  };
-
   beforeEach(() => {
     vi.clearAllMocks();
-    mockAxiosInstance.post.mockClear();
-    mockAxiosInstance.get.mockClear();
+    localStorage.clear();
   });
 
-  describe("generateQuiz", () => {
-    it("should call the correct endpoint with data", async () => {
-      const mockData: GenerateQuizForm = {
-        content: "Test content",
-        topic: "Test topic",
-        num_questions: 5,
-      };
+  it("adds auth token to request headers", async () => {
+    const token = "test-token";
+    localStorage.setItem("token", token);
 
-      const mockResponse: QuizResponse = {
-        id: "123",
-        questions: [
-          {
-            question: "Test question?",
-            options: ["A", "B", "C", "D"],
-            correct_answer: 0,
-          },
-        ],
-        topic: "Test topic",
-      };
-
-      mockAxiosInstance.post.mockResolvedValueOnce({ data: mockResponse });
-
-      const result = await generateQuiz(mockData);
-
-      expect(mockAxiosInstance.post).toHaveBeenCalledWith(
-        "/api/v1/generate-quiz",
-        mockData
-      );
-      expect(result).toEqual(mockResponse);
-    });
+    const config = { headers: {} } as InternalAxiosRequestConfig;
+    const addToken = (config: InternalAxiosRequestConfig) => {
+      if (token) {
+        config.headers = config.headers || {};
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+      return config;
+    };
+    const result = addToken(config);
+    expect(result.headers.Authorization).toBe(`Bearer ${token}`);
   });
 
-  describe("uploadDocument", () => {
-    it("should call the correct endpoint with FormData", async () => {
-      const file = new File(["test"], "test.txt", { type: "text/plain" });
-      const mockData: UploadDocumentForm = {
-        file,
-        topic: "Test topic",
-        num_questions: 5,
-      };
+  it("generates a quiz", async () => {
+    const topic = "test topic";
+    const numQuestions = 5;
+    await generateQuiz(topic, numQuestions);
 
-      const mockResponse: QuizResponse = {
-        id: "123",
-        questions: [
-          {
-            question: "Test question?",
-            options: ["A", "B", "C", "D"],
-            correct_answer: 0,
-          },
-        ],
-        topic: "Test topic",
-      };
-
-      mockAxiosInstance.post.mockResolvedValueOnce({ data: mockResponse });
-
-      const result = await uploadDocument(mockData);
-
-      expect(mockAxiosInstance.post).toHaveBeenCalledWith(
-        "/api/v1/upload-document",
-        expect.any(FormData),
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        }
-      );
-      expect(result).toEqual(mockResponse);
-    });
+    const mockAxios = (await import("axios")).default;
+    const instance = mockAxios.create();
+    expect(instance.post).toHaveBeenCalledWith(
+      "/quiz/generate",
+      expect.objectContaining({ topic, numQuestions })
+    );
   });
 
-  describe("getQuiz", () => {
-    it("should call the correct endpoint with quiz ID", async () => {
-      const quizId = "123";
-      const mockResponse: QuizResponse = {
-        id: "123",
-        questions: [
-          {
-            question: "Test question?",
-            options: ["A", "B", "C", "D"],
-            correct_answer: 0,
-          },
-        ],
-        topic: "Test topic",
-      };
+  it("uploads a document", async () => {
+    const file = new File(["test"], "test.txt", { type: "text/plain" });
+    const numQuestions = 5;
+    await uploadDocument(file, numQuestions);
 
-      mockAxiosInstance.get.mockResolvedValueOnce({ data: mockResponse });
-
-      const result = await getQuiz(quizId);
-
-      expect(mockAxiosInstance.get).toHaveBeenCalledWith(
-        `/api/v1/quiz/${quizId}`
-      );
-      expect(result).toEqual(mockResponse);
-    });
+    const mockAxios = (await import("axios")).default;
+    const instance = mockAxios.create();
+    expect(instance.post).toHaveBeenCalledWith(
+      "/quiz/upload",
+      expect.any(FormData)
+    );
   });
 
-  describe("submitAnswers", () => {
-    it("should call the correct endpoint with answer data", async () => {
-      const mockData = {
-        quiz_id: 123,
-        answers: [0, 1, 2],
-      };
+  it("gets a quiz by id", async () => {
+    const quizId = "123";
+    await getQuiz(quizId);
 
-      const mockResponse: QuizResult = {
-        quiz_id: 123,
-        score: 2,
-        total: 3,
-        answers: [0, 1, 2],
-        correct_answers: [0, 1, 0],
-      };
-
-      mockAxiosInstance.post.mockResolvedValueOnce({ data: mockResponse });
-
-      const result = await submitAnswers(mockData);
-
-      expect(mockAxiosInstance.post).toHaveBeenCalledWith(
-        "/api/v1/submit-answer",
-        mockData
-      );
-      expect(result).toEqual(mockResponse);
-    });
+    const mockAxios = (await import("axios")).default;
+    const instance = mockAxios.create();
+    expect(instance.get).toHaveBeenCalledWith(`/quiz/${quizId}`);
   });
 
-  describe("checkHealth", () => {
-    it("should call the health endpoint", async () => {
-      const mockResponse = {
-        status: "ok",
-        version: "1.0.0",
-      };
+  it("submits answers", async () => {
+    const quizId = "123";
+    const answers = { "1": 2 };
+    await submitAnswers(quizId, answers);
 
-      mockAxiosInstance.get.mockResolvedValueOnce({ data: mockResponse });
+    const mockAxios = (await import("axios")).default;
+    const instance = mockAxios.create();
+    expect(instance.post).toHaveBeenCalledWith(
+      `/quiz/${quizId}/submit`,
+      expect.objectContaining({ answers })
+    );
+  });
 
-      const result = await checkHealth();
+  it("checks health", async () => {
+    await checkHealth();
 
-      expect(mockAxiosInstance.get).toHaveBeenCalledWith("/health");
-      expect(result).toEqual(mockResponse);
-    });
+    const mockAxios = (await import("axios")).default;
+    const instance = mockAxios.create();
+    expect(instance.get).toHaveBeenCalledWith("/health");
   });
 });

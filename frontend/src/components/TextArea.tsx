@@ -8,16 +8,23 @@ interface TextAreaProps
 }
 
 const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(
-  ({ label, error, helperText, className = "", ...props }, ref) => {
+  ({ label, error, helperText, className = "", id, ...props }, ref) => {
+    // Generate a unique ID if one is not provided
+    const uniqueId = id || `textarea-${Math.random().toString(36).slice(2)}`;
+
     return (
       <div className="w-full">
         {label && (
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label
+            htmlFor={uniqueId}
+            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+          >
             {label}
           </label>
         )}
         <textarea
           ref={ref}
+          id={uniqueId}
           className={`
             w-full px-3 py-2.5 border rounded-lg shadow-sm 
             transition-colors duration-200

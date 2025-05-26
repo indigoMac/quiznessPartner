@@ -1,68 +1,69 @@
-import { useState, useEffect } from "react";
+import {
+  BrowserRouter as Router,
+  Route,
+  Routes,
+  Outlet,
+} from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { AuthProvider } from "./context/AuthContext";
+import Login from "./pages/Login";
+import Register from "./pages/Register";
 import HomePage from "./pages/HomePage";
+import Dashboard from "./pages/Dashboard";
 import QuizPage from "./pages/QuizPage";
-import TestComponent from "./components/TestComponent";
-import "./App.css";
+import CreateQuiz from "./components/CreateQuiz";
+import ProtectedRoute from "./components/ProtectedRoute";
+import Layout from "./components/Layout";
 
 // Create a client
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      refetchOnWindowFocus: false,
+      staleTime: 5 * 60 * 1000, // 5 minutes
+      gcTime: 10 * 60 * 1000, // 10 minutes
       retry: 1,
+      refetchOnWindowFocus: false,
     },
   },
 });
 
 function App() {
-  const [currentPage, setCurrentPage] = useState<string>("home");
-  const [quizId, setQuizId] = useState<string | null>(null);
-
-  // Simple client-side routing
-  useEffect(() => {
-    const handleRouting = () => {
-      const path = window.location.pathname;
-      const quizMatch = path.match(/^\/quiz\/([^/]+)/);
-
-      if (quizMatch && quizMatch[1]) {
-        setCurrentPage("quiz");
-        setQuizId(quizMatch[1]);
-      } else if (path === "/test") {
-        setCurrentPage("test");
-      } else {
-        setCurrentPage("home");
-        setQuizId(null);
-      }
-    };
-
-    // Initial routing
-    handleRouting();
-
-    // Listen for popstate events (browser back/forward buttons)
-    window.addEventListener("popstate", handleRouting);
-
-    return () => {
-      window.removeEventListener("popstate", handleRouting);
-    };
-  }, []);
-
-  // Render the appropriate page based on the route
-  const renderPage = () => {
-    switch (currentPage) {
-      case "quiz":
-        return quizId ? <QuizPage quizId={quizId} /> : <HomePage />;
-      case "test":
-        return <TestComponent />;
-      case "home":
-      default:
-        return <HomePage />;
-    }
-  };
-
   return (
     <QueryClientProvider client={queryClient}>
-      {renderPage()}
+      <Router>
+        <AuthProvider>
+          <Routes>
+            {/* Public routes */}
+            <Route
+              element={
+                <Layout>
+                  <Outlet />
+                </Layout>
+              }
+            >
+              <Route path="/" element={<HomePage />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/quiz/:id" element={<QuizPage />} />
+            </Route>
+
+            {/* Protected routes */}
+            <Route element={<ProtectedRoute />}>
+              <Route
+                element={
+                  <Layout>
+                    <Outlet />
+                  </Layout>
+                }
+              >
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/quiz/new" element={<CreateQuiz />} />
+                <Route path="/profile" element={<div>Profile (TODO)</div>} />
+              </Route>
+            </Route>
+          </Routes>
+        </AuthProvider>
+      </Router>
     </QueryClientProvider>
   );
 }

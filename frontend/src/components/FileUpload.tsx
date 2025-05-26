@@ -1,4 +1,5 @@
-import React, { useRef, useState } from "react";
+import { useRef, useState } from "react";
+import type { FC } from "react";
 import Button from "./Button";
 
 interface FileUploadProps {
@@ -7,19 +8,25 @@ interface FileUploadProps {
   accept?: string;
   error?: string;
   maxSize?: number; // in MB
+  id?: string;
 }
 
-const FileUpload: React.FC<FileUploadProps> = ({
+const FileUpload: FC<FileUploadProps> = ({
   onFileSelect,
   label = "Upload file",
   accept = ".pdf,.txt,.doc,.docx",
   error,
   maxSize = 10, // Default max size 10MB
+  id,
 }) => {
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string>("");
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Generate a unique ID if one is not provided
+  const inputId =
+    id || `file-upload-${Math.random().toString(36).substr(2, 9)}`;
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -93,7 +100,10 @@ const FileUpload: React.FC<FileUploadProps> = ({
   return (
     <div className="w-full">
       {label && (
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label
+          htmlFor={inputId}
+          className="block text-sm font-medium text-gray-700 mb-1"
+        >
           {label}
         </label>
       )}
@@ -111,10 +121,12 @@ const FileUpload: React.FC<FileUploadProps> = ({
       >
         <input
           ref={inputRef}
+          id={inputId}
           type="file"
           className="hidden"
           accept={accept}
           onChange={handleChange}
+          aria-label={label}
         />
 
         {selectedFile ? (

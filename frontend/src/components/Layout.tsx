@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from "react";
+import { Link, useLocation } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -6,6 +8,8 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const { user, logout } = useAuth();
+  const location = useLocation();
 
   // Check for user preference on initial load
   useEffect(() => {
@@ -39,51 +43,98 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       <header className="bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-800 dark:to-purple-900 text-white shadow-md transition-all duration-300">
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center">
-            <svg
-              className="h-8 w-8 mr-2 transition-transform duration-300 hover:rotate-12"
-              viewBox="0 0 24 24"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M4 9h16v10a2 2 0 01-2 2H6a2 2 0 01-2-2V9zm2-5h12a2 2 0 012 2v2H4V6a2 2 0 012-2z"
-                fill="currentColor"
-                className="transition-colors duration-300"
-              />
-              <path
-                d="M8 12h8m-8 4h5"
-                stroke="white"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-            <h1 className="text-xl font-bold tracking-tight">
-              <span className="text-white drop-shadow">Quizness</span>
-              <span className="text-indigo-200 dark:text-indigo-300 ml-1 font-light">
-                Partner
-              </span>
-            </h1>
+            <Link to="/" className="flex items-center">
+              <svg
+                className="h-8 w-8 mr-2 transition-transform duration-300 hover:rotate-12"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M4 9h16v10a2 2 0 01-2 2H6a2 2 0 01-2-2V9zm2-5h12a2 2 0 012 2v2H4V6a2 2 0 012-2z"
+                  fill="currentColor"
+                  className="transition-colors duration-300"
+                />
+                <path
+                  d="M8 12h8m-8 4h5"
+                  stroke="white"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <h1 className="text-xl font-bold tracking-tight">
+                <span className="text-white drop-shadow">Quizness</span>
+                <span className="text-indigo-200 dark:text-indigo-300 ml-1 font-light">
+                  Partner
+                </span>
+              </h1>
+            </Link>
           </div>
           <div className="flex items-center space-x-6">
             <nav className="hidden md:block">
               <ul className="flex space-x-6">
                 <li>
-                  <a
-                    href="/"
-                    className="hover:text-indigo-200 transition-colors duration-200 font-medium"
+                  <Link
+                    to="/"
+                    className={`hover:text-indigo-200 transition-colors duration-200 font-medium ${
+                      location.pathname === "/" ? "text-indigo-200" : ""
+                    }`}
                   >
                     Home
-                  </a>
+                  </Link>
                 </li>
-                <li>
-                  <a
-                    href="#"
-                    className="hover:text-indigo-200 transition-colors duration-200 font-medium"
-                  >
-                    About
-                  </a>
-                </li>
+                {user ? (
+                  <>
+                    <li>
+                      <Link
+                        to="/dashboard"
+                        className={`hover:text-indigo-200 transition-colors duration-200 font-medium ${
+                          location.pathname === "/dashboard"
+                            ? "text-indigo-200"
+                            : ""
+                        }`}
+                      >
+                        Dashboard
+                      </Link>
+                    </li>
+                    <li>
+                      <button
+                        onClick={logout}
+                        className="hover:text-indigo-200 transition-colors duration-200 font-medium"
+                      >
+                        Logout
+                      </button>
+                    </li>
+                  </>
+                ) : (
+                  <>
+                    <li>
+                      <Link
+                        to="/login"
+                        className={`hover:text-indigo-200 transition-colors duration-200 font-medium ${
+                          location.pathname === "/login"
+                            ? "text-indigo-200"
+                            : ""
+                        }`}
+                      >
+                        Login
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        to="/register"
+                        className={`hover:text-indigo-200 transition-colors duration-200 font-medium ${
+                          location.pathname === "/register"
+                            ? "text-indigo-200"
+                            : ""
+                        }`}
+                      >
+                        Register
+                      </Link>
+                    </li>
+                  </>
+                )}
               </ul>
             </nav>
             <button
