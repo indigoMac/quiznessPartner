@@ -27,7 +27,6 @@ import {
   submitAnswers,
   checkHealth,
 } from "../quizApi";
-import type { AnswerSubmission } from "@/types/api";
 
 describe("Quiz API", () => {
   beforeEach(() => {
@@ -52,29 +51,32 @@ describe("Quiz API", () => {
   });
 
   it("generates a quiz", async () => {
-    const topic = "test topic";
-    const numQuestions = 5;
-    await generateQuiz(topic, numQuestions);
+    const data = {
+      content: "Test content for quiz generation",
+      topic: "test topic",
+      numQuestions: 5,
+    };
+    await generateQuiz(data);
 
     const mockAxios = (await import("axios")).default;
     const instance = mockAxios.create();
-    expect(instance.post).toHaveBeenCalledWith(
-      "/quiz/generate",
-      expect.objectContaining({ topic, numQuestions })
-    );
+    const postCall = instance.post as unknown as jest.Mock;
+    const [url, payload] = postCall.mock.calls[0];
+    expect(url).toBe("/api/v1/generate-quiz");
+    expect(payload).toEqual(data);
   });
 
   it("uploads a document", async () => {
     const file = new File(["test"], "test.txt", { type: "text/plain" });
-    const numQuestions = 5;
-    await uploadDocument(file, numQuestions);
+    const data = { file, numQuestions: 5 };
+    await uploadDocument(data);
 
     const mockAxios = (await import("axios")).default;
     const instance = mockAxios.create();
-    expect(instance.post).toHaveBeenCalledWith(
-      "/quiz/upload",
-      expect.any(FormData)
-    );
+    const postCall = instance.post as unknown as jest.Mock;
+    const [url, payload] = postCall.mock.calls[0];
+    expect(url).toBe("/api/v1/upload-document");
+    expect(payload).toBeInstanceOf(FormData);
   });
 
   it("gets a quiz by id", async () => {
@@ -83,20 +85,21 @@ describe("Quiz API", () => {
 
     const mockAxios = (await import("axios")).default;
     const instance = mockAxios.create();
-    expect(instance.get).toHaveBeenCalledWith(`/quiz/${quizId}`);
+    const getCall = instance.get as unknown as jest.Mock;
+    const [url] = getCall.mock.calls[0];
+    expect(url).toBe(`/api/v1/quiz/${quizId}`);
   });
 
   it("submits answers", async () => {
-    const quizId = "123";
-    const answers = { "1": 2 };
-    await submitAnswers(quizId, answers);
+    const data = { quiz_id: 123, answers: [2] };
+    await submitAnswers(data);
 
     const mockAxios = (await import("axios")).default;
     const instance = mockAxios.create();
-    expect(instance.post).toHaveBeenCalledWith(
-      `/quiz/${quizId}/submit`,
-      expect.objectContaining({ answers })
-    );
+    const postCall = instance.post as unknown as jest.Mock;
+    const [url, payload] = postCall.mock.calls[0];
+    expect(url).toBe("/api/v1/submit-answer");
+    expect(payload).toEqual(data);
   });
 
   it("checks health", async () => {
@@ -104,6 +107,8 @@ describe("Quiz API", () => {
 
     const mockAxios = (await import("axios")).default;
     const instance = mockAxios.create();
-    expect(instance.get).toHaveBeenCalledWith("/health");
+    const getCall = instance.get as unknown as jest.Mock;
+    const [url] = getCall.mock.calls[0];
+    expect(url).toBe("/health");
   });
 });
