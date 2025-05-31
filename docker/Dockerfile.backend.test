@@ -1,0 +1,30 @@
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpq-dev \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first to leverage Docker cache
+COPY backend/requirements.txt .
+COPY backend/requirements-dev.txt .
+
+# Install both production and development dependencies
+RUN pip install --no-cache-dir -r requirements-dev.txt
+
+# Copy the rest of the application
+COPY backend/ .
+
+# Create directory for coverage reports
+RUN mkdir -p htmlcov
+
+# Create non-root user
+RUN useradd -m testuser && chown -R testuser:testuser /app
+USER testuser
+
+# Default command for running tests
+CMD ["python", "-m", "pytest", "tests/", "-v", "--cov=.", "--cov-report=term-missing"] 

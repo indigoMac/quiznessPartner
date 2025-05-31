@@ -2,13 +2,22 @@ name: Quizness Partner CI/CD
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   backend-tests:
     runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11"]
+        test-type: ["unit", "integration"]
 
     services:
       postgres:
@@ -26,7 +35,74 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run database migrations
+        env:
+          DATABASE_URI: postgresql://postgres:postgres@localhost:5432/quizness_test
+          ENVIRONMENT: test
+        run: |
+          cd backend
+          alembic upgrade head
+
+      - name: Run ${{ matrix.test-type }} tests
+        env:
+          DATABASE_URI: postgresql://postgres:postgres@localhost:5432/quizness_test
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/quizness_test
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'test_key' }}
+          ENVIRONMENT: test
+          SECRET_KEY: test-secret-key-for-ci
+          ALGORITHM: HS256
+          ACCESS_TOKEN_EXPIRE_MINUTES: 30
+        run: |
+          cd backend
+          if [ "${{ matrix.test-type }}" == "unit" ]; then
+            python -m pytest tests/ -m "unit or not integration" --cov=. --cov-report=xml --cov-report=term-missing -v
+          else
+            python -m pytest tests/ -m "integration" --cov=. --cov-report=xml --cov-report=term-missing -v
+          fi
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./backend/coverage.xml
+          flags: backend-${{ matrix.test-type }}-py${{ matrix.python-version }}
+          fail_ci_if_error: false
+
+  performance-tests:
+    runs-on: ubuntu-latest
+    needs: [backend-tests]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: quizness_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -38,33 +114,59 @@ jobs:
         run: |
           cd backend
           python -m pip install --upgrade pip
-          pip install pytest pytest-cov
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install -r requirements-dev.txt
 
-      - name: Run tests with coverage
+      - name: Run performance tests
         env:
           DATABASE_URI: postgresql://postgres:postgres@localhost:5432/quizness_test
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'test_key' }}
+          OPENAI_API_KEY: test_key
           ENVIRONMENT: test
+          SECRET_KEY: test-secret-key-for-ci-performance
+          ALGORITHM: HS256
+          ACCESS_TOKEN_EXPIRE_MINUTES: 30
         run: |
           cd backend
-          python -m pytest tests/ --cov=. --cov-report=xml
+          python -m pytest tests/ -m "slow" --durations=10 -v
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+  security-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
-          file: ./backend/coverage.xml
-          flags: backend
-          fail_ci_if_error: false
+          python-version: "3.11"
+
+      - name: Install security tools
+        run: |
+          pip install safety bandit semgrep
+
+      - name: Run safety check
+        run: |
+          cd backend
+          safety check -r requirements.txt || true
+
+      - name: Run bandit security scan
+        run: |
+          cd backend
+          bandit -r . -f json -o bandit-report.json || true
+
+      - name: Upload security scan results
+        uses: actions/upload-artifact@v3
+        with:
+          name: security-scan-results
+          path: backend/bandit-report.json
 
   frontend-tests:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: "18"
           cache: "npm"
@@ -73,8 +175,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd frontend
-          npm install
-          npm install @vitest/coverage-v8 --save-dev
+          npm ci
 
       - name: Run tests with coverage
         run: |
@@ -88,40 +189,132 @@ jobs:
           flags: frontend
           fail_ci_if_error: false
 
-  lint:
+  lint-and-format:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.11"
 
-      - name: Install linting tools
+      - name: Install Python linting tools
         run: |
           python -m pip install --upgrade pip
-          pip install flake8 black isort
+          pip install black isort flake8 mypy
 
-      - name: Run linters
+      - name: Check Python formatting with Black
         run: |
           cd backend
-          flake8 . --exclude=venv,migrations --max-line-length=100 || true
-          black --check --exclude=venv . || true
-          isort --check --profile black . || true
+          black --check --diff .
+
+      - name: Check Python imports with isort
+        run: |
+          cd backend
+          isort --check --diff --profile black .
+
+      - name: Lint Python code with flake8
+        run: |
+          cd backend
+          flake8 . --exclude=venv,migrations,alembic --max-line-length=100 --extend-ignore=E203,W503
+
+      - name: Type check with mypy
+        run: |
+          cd backend
+          mypy . --ignore-missing-imports || true
 
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: "18"
 
-      - name: Install ESLint
+      - name: Install frontend dependencies
         run: |
           cd frontend
-          npm install
+          npm ci
 
-      - name: Run ESLint
+      - name: Lint frontend code
         run: |
           cd frontend
-          npm run lint || true
+          npm run lint
+
+  build-and-test-docker:
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-tests]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend test image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.backend.test
+          push: false
+          tags: quizness-backend-test:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test Docker build
+        run: |
+          docker-compose -f docker-compose.test.yml up --build --abort-on-container-exit backend-test
+
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-tests, lint-and-format, security-scan]
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+
+    environment: staging
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker images
+        run: |
+          docker build -f Dockerfile.backend.prod -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:staging .
+          docker build -f Dockerfile.frontend.prod -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:staging .
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:staging
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:staging
+
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs:
+      [
+        backend-tests,
+        frontend-tests,
+        lint-and-format,
+        security-scan,
+        performance-tests,
+      ]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker images
+        run: |
+          docker build -f Dockerfile.backend.prod -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:latest .
+          docker build -f Dockerfile.frontend.prod -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:latest .
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:latest
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:latest

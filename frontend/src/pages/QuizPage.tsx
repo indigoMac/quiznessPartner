@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useGetQuiz, useSubmitAnswers } from "../hooks/useQuiz";
 import Button from "../components/Button";
@@ -37,9 +37,9 @@ const QuizPage = () => {
   // }, [quiz]);
 
   // Debug selected answers
-  useEffect(() => {
-    console.log("Selected answers:", selectedAnswers);
-  }, [selectedAnswers]);
+  // useEffect(() => {
+  //   console.log("Selected answers:", selectedAnswers);
+  // }, [selectedAnswers]);
 
   if (isLoading) {
     return (

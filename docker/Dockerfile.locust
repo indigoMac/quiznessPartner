@@ -1,0 +1,16 @@
+FROM python:3.9-slim
+
+WORKDIR /locust
+
+# Install locust and dependencies
+RUN pip install locust==2.17.0
+
+# Create locust user
+RUN useradd -m locustuser && chown -R locustuser:locustuser /locust
+USER locustuser
+
+# Expose Locust web interface port
+EXPOSE 8089
+
+# Default command to run Locust
+CMD ["locust", "-f", "locustfile.py", "--web-host=0.0.0.0"] 
