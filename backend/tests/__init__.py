@@ -1,1 +1,1 @@
-# Test package for QuiznessParter backend 
+# Test package for QuiznessParter backend

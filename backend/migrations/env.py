@@ -1,23 +1,20 @@
-from logging.config import fileConfig
-
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-
-from alembic import context
-
 import os
 import sys
+from logging.config import fileConfig
+
+from alembic import context
 from dotenv import load_dotenv
+from sqlalchemy import engine_from_config, pool
 
 # Add the parent directory to the path so imports work correctly
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import all models so Alembic can detect them
 from models.base import Base
-from models.user import User
-from models.quiz import Quiz
 from models.question import Question
+from models.quiz import Quiz
 from models.result import Result
+from models.user import User
 
 # Load .env file
 load_dotenv()
@@ -86,9 +83,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()

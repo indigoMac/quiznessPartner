@@ -1,219 +1,259 @@
-from fastapi import FastAPI, Depends, File, UploadFile, HTTPException, Form
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
 import os
-from dotenv import load_dotenv
-from sqlalchemy.orm import Session
-import uuid
-from pydantic_settings import BaseSettings
+from typing import Any, Dict, List, Optional
 
-# Import utility modules
-from db_utils import get_db, create_quiz, add_questions_to_quiz, get_quiz_with_questions, record_quiz_result
+from dotenv import load_dotenv
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from pydantic_settings import BaseSettings
+from sqlalchemy.orm import Session
+
 from ai_utils import extract_text_from_pdf, generate_quiz_from_text
 from auth import auth_router
+from auth.dependencies import get_optional_user
+# Import utility modules
+from db_utils import (
+    add_questions_to_quiz,
+    create_quiz,
+    get_db,
+    get_quiz_with_questions,
+    record_quiz_result,
+)
 from models.user import User
-from auth.dependencies import get_current_active_user, get_optional_user
 
 # Load environment variables
 load_dotenv()
 
-class Settings(BaseSettings):
-    secret_key: str
-    algorithm: str = "HS256"
-    access_token_expire_minutes: int = 30
-    cors_origins: List[str] = ["http://localhost:3000"]
-    environment: str = "development"
 
-    class Config:
-        env_file = ".env"
+class AuthSettings(BaseSettings):
+    secret_key: str = os.getenv("SECRET_KEY", "your-secret-key-here")
+    algorithm: str = os.getenv("ALGORITHM", "HS256")
+    access_token_expire_minutes: int = int(
+        os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30")
+    )
 
-settings = Settings()
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="Quizness Partner API",
-    description="AI-powered quiz generation API",
+    title="QuizNess API",
+    description="AI-powered quiz generation platform",
     version="1.0.0",
 )
 
-# Configure CORS
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=["*"],  # In production, specify actual origins
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
-    max_age=600,
 )
 
-# Include authentication router
+# Include authentication routes
 app.include_router(auth_router, prefix="/api/v1")
 
-# Health check endpoint
-@app.get("/health")
-async def health_check():
-    return JSONResponse(
-        content={"status": "healthy", "version": "1.0.0"},
-        status_code=200
-    )
 
-# Basic models for API
+# Pydantic models for request/response
 class QuizRequest(BaseModel):
     content: str
-    topic: Optional[str] = None
-    num_questions: Optional[int] = 5
+    topic: str
+    num_questions: int = 5
 
-class QuizQuestion(BaseModel):
-    question: str
-    options: List[str]
-    correct_answer: int
-
-class QuizResponse(BaseModel):
-    id: str
-    questions: List[Dict[str, Any]]
-    topic: Optional[str] = None
 
 class AnswerSubmission(BaseModel):
     quiz_id: int
-    answers: List[int]  # List of selected answer indices
+    answers: List[int]
 
-class QuizResult(BaseModel):
+
+class QuizResponse(BaseModel):
+    id: str
+    title: str
+    topic: str
+    questions: List[Dict[str, Any]]
+
+
+class ResultResponse(BaseModel):
     quiz_id: int
     score: int
     total: int
     answers: List[int]
-    correct_answers: List[int]
 
-# Document upload endpoint
-@app.post("/api/v1/upload-document", response_model=QuizResponse)
-async def upload_document(
-    file: UploadFile = File(...),
-    topic: Optional[str] = Form(None),
-    num_questions: Optional[int] = Form(5),
-    db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_user)
-):
-    try:
-        # Extract text from PDF
-        if file.content_type == "application/pdf":
-            content = extract_text_from_pdf(file.file)
-        else:
-            # For other file types (assuming text)
-            content = (await file.read()).decode("utf-8")
-        
-        # Generate quiz questions using AI
-        questions = generate_quiz_from_text(content, topic, num_questions)
-        
-        # Store quiz and questions in database
-        title = f"Quiz on {topic}" if topic else f"Quiz from {file.filename}"
-        user_id = current_user.id if current_user else None
-        quiz = create_quiz(db, title=title, topic=topic, user_id=user_id)
-        add_questions_to_quiz(db, quiz.id, questions)
-        
-        return {
-            "id": str(quiz.id),
-            "questions": questions,
-            "topic": topic
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing document: {str(e)}")
 
-# Quiz generation endpoint
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {"message": "Welcome to QuizNess API"}
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy", "message": "QuizNess API is running"}
+
+
 @app.post("/api/v1/generate-quiz", response_model=QuizResponse)
 async def generate_quiz(
     request: QuizRequest,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_user)
+    current_user: Optional[User] = Depends(get_optional_user),
 ):
+    """Generate a quiz from text content"""
     try:
-        # Generate quiz questions using AI
-        questions = generate_quiz_from_text(
-            request.content,
-            request.topic,
-            request.num_questions
+        # Generate quiz using AI
+        questions_data = generate_quiz_from_text(
+            request.content, request.topic, request.num_questions
         )
-        
-        # Store quiz and questions in database
-        title = f"Quiz on {request.topic}" if request.topic else "Custom Quiz"
+
+        if not questions_data:
+            raise HTTPException(
+                status_code=500, detail="Failed to generate quiz questions"
+            )
+
+        # Create quiz in database
+        quiz_title = f"Quiz on {request.topic}"
         user_id = current_user.id if current_user else None
-        quiz = create_quiz(db, title=title, topic=request.topic, user_id=user_id)
-        add_questions_to_quiz(db, quiz.id, questions)
-        
-        return {
-            "id": str(quiz.id),
-            "questions": questions,
-            "topic": request.topic
-        }
+        quiz = create_quiz(db, quiz_title, request.topic, user_id)
+
+        # Add questions to quiz
+        add_questions_to_quiz(db, quiz.id, questions_data)
+
+        # Get the complete quiz with questions
+        complete_quiz = get_quiz_with_questions(db, quiz.id)
+
+        return QuizResponse(
+            id=str(complete_quiz["id"]),
+            title=complete_quiz["title"],
+            topic=complete_quiz["topic"],
+            questions=complete_quiz["questions"],
+        )
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error generating quiz: {str(e)}")
+        print(f"Error in generate_quiz: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
-# Get quiz by ID
-@app.get("/api/v1/quiz/{quiz_id}", response_model=QuizResponse)
+
+@app.post("/api/v1/upload-document", response_model=QuizResponse)
+async def upload_document(
+    file: UploadFile = File(...),
+    topic: str = Form(...),
+    num_questions: int = Form(5),
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_user),
+):
+    """Upload a document and generate a quiz from it"""
+    try:
+        # Validate file type
+        if not file.filename.lower().endswith((".pdf", ".txt")):
+            raise HTTPException(
+                status_code=400,
+                detail="Only PDF and TXT files are supported",
+            )
+
+        # Extract text from file
+        if file.filename.lower().endswith(".pdf"):
+            text = extract_text_from_pdf(file.file)
+        else:
+            # Handle text files
+            content = await file.read()
+            text = content.decode("utf-8")
+
+        if not text.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="No text could be extracted from the file",
+            )
+
+        # Generate quiz using AI
+        questions_data = generate_quiz_from_text(text, topic, num_questions)
+
+        if not questions_data:
+            raise HTTPException(
+                status_code=500, detail="Failed to generate quiz questions"
+            )
+
+        # Create quiz in database
+        quiz_title = f"Quiz on {topic}"
+        user_id = current_user.id if current_user else None
+        quiz = create_quiz(db, quiz_title, topic, user_id)
+
+        # Add questions to quiz
+        add_questions_to_quiz(db, quiz.id, questions_data)
+
+        # Get the complete quiz with questions
+        complete_quiz = get_quiz_with_questions(db, quiz.id)
+
+        return QuizResponse(
+            id=str(complete_quiz["id"]),
+            title=complete_quiz["title"],
+            topic=complete_quiz["topic"],
+            questions=complete_quiz["questions"],
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error in upload_document: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.get("/api/v1/quiz/{quiz_id}")
 async def get_quiz(quiz_id: int, db: Session = Depends(get_db)):
-    quiz, questions = get_quiz_with_questions(db, quiz_id)
-    
-    if not quiz:
-        raise HTTPException(status_code=404, detail="Quiz not found")
-    
-    print(f"Raw quiz data: {quiz.__dict__}")
-    print(f"Raw questions data: {[q.__dict__ for q in questions]}")
-    
-    # Convert DB models to API response format
-    questions_data = [
-        {
-            "id": q.id,
-            "question": q.question_text,
-            "options": q.options,
-            "correct_answer": q.correct_answer
-        } for q in questions
-    ]
-    
-    response_data = {
-        "id": str(quiz.id),
-        "title": quiz.title,
-        "questions": questions_data,
-        "topic": quiz.topic
-    }
-    
-    print(f"Final response data: {response_data}")
-    
-    return response_data
+    """Get a quiz by ID"""
+    try:
+        quiz = get_quiz_with_questions(db, quiz_id)
+        if not quiz:
+            raise HTTPException(status_code=404, detail="Quiz not found")
 
-# Submit quiz answers and get results
-@app.post("/api/v1/submit-answer", response_model=QuizResult)
+        return quiz
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error in get_quiz: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.post("/api/v1/submit-answer", response_model=ResultResponse)
 async def submit_answer(submission: AnswerSubmission, db: Session = Depends(get_db)):
-    quiz, questions = get_quiz_with_questions(db, submission.quiz_id)
-    
-    if not quiz:
-        raise HTTPException(status_code=404, detail="Quiz not found")
-    
-    # Calculate score
-    correct_answers = [q.correct_answer for q in questions]
-    score = sum(1 for a, c in zip(submission.answers, correct_answers) if a == c)
-    
-    # Record the result in the database
-    record_quiz_result(
-        db, 
-        quiz_id=submission.quiz_id,
-        answers=submission.answers,
-        score=score
-    )
-    
-    return {
-        "quiz_id": submission.quiz_id,
-        "score": score,
-        "total": len(questions),
-        "answers": submission.answers,
-        "correct_answers": correct_answers
-    }
+    """Submit answers for a quiz"""
+    try:
+        # Get the quiz to validate answers
+        quiz = get_quiz_with_questions(db, submission.quiz_id)
+        if not quiz:
+            raise HTTPException(status_code=404, detail="Quiz not found")
+
+        questions = quiz["questions"]
+        if len(submission.answers) != len(questions):
+            raise HTTPException(
+                status_code=400,
+                detail="Number of answers doesn't match number of questions",
+            )
+
+        # Calculate score
+        score = 0
+        for i, answer in enumerate(submission.answers):
+            if answer == questions[i]["correct_answer"]:
+                score += 1
+
+        # Record the result
+        record_quiz_result(
+            db, submission.quiz_id, score, len(questions), submission.answers
+        )
+
+        return ResultResponse(
+            quiz_id=submission.quiz_id,
+            score=score,
+            total=len(questions),
+            answers=submission.answers,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error in submit_answer: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True if os.getenv("ENVIRONMENT") == "development" else False
-    ) 
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)

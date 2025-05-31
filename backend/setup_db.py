@@ -1,17 +1,18 @@
-from db import engine, SessionLocal
-from models.base import Base
-from models.user import User
-from models.quiz import Quiz
-from models.question import Question
-from models.result import Result
 from auth.auth_utils import get_password_hash
+from db import SessionLocal, engine
+from models.base import Base
+from models.question import Question
+from models.quiz import Quiz
+from models.result import Result
+from models.user import User
+
 
 def setup_database():
     """Set up the database with tables and a test user."""
     print("Creating database tables...")
     # Make sure all models are imported before creating tables
     Base.metadata.create_all(bind=engine)
-    
+
     # Create a test user
     db = SessionLocal()
     try:
@@ -20,7 +21,7 @@ def setup_database():
         if not existing_user:
             test_user = User(
                 email="test@example.com",
-                hashed_password=get_password_hash("testpassword")
+                hashed_password=get_password_hash("testpassword"),
             )
             db.add(test_user)
             db.commit()
@@ -32,5 +33,6 @@ def setup_database():
     finally:
         db.close()
 
+
 if __name__ == "__main__":
-    setup_database() 
+    setup_database()

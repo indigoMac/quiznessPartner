@@ -84,6 +84,7 @@ case "$1" in
             -v \
             --cov=. \
             --cov-report=html:htmlcov \
+            --cov-report=xml \
             --cov-report=term-missing \
             --durations=10 \
             -m "not integration and not e2e and not slow"
@@ -100,6 +101,7 @@ case "$1" in
             --cov=. \
             --cov-append \
             --cov-report=html:htmlcov \
+            --cov-report=xml \
             --cov-report=term-missing \
             --durations=10 \
             -m "integration"
@@ -116,6 +118,7 @@ case "$1" in
             --cov=. \
             --cov-append \
             --cov-report=html:htmlcov \
+            --cov-report=xml \
             --cov-report=term-missing \
             --durations=10 \
             -m "e2e"
@@ -126,6 +129,8 @@ case "$1" in
         log_info "Running performance tests..."
         $PYTEST_CMD tests/performance/test_quiz_performance.py \
             -v \
+            --cov=. \
+            --cov-report=xml \
             --durations=10 \
             -m "performance or slow"
         log_success "Performance tests completed"
@@ -152,6 +157,7 @@ case "$1" in
             -v \
             --cov=. \
             --cov-report=html:htmlcov \
+            --cov-report=xml \
             --cov-report=term-missing \
             --durations=10 \
             -m "not integration and not e2e and not slow"
@@ -165,6 +171,7 @@ case "$1" in
             --cov=. \
             --cov-append \
             --cov-report=html:htmlcov \
+            --cov-report=xml \
             --cov-report=term-missing \
             --durations=10 \
             -m "integration"
@@ -175,6 +182,7 @@ case "$1" in
             --cov=. \
             --cov-append \
             --cov-report=html:htmlcov \
+            --cov-report=xml \
             --cov-report=term-missing \
             --durations=10 \
             -m "e2e"
@@ -194,6 +202,7 @@ case "$1" in
             -v \
             --cov=. \
             --cov-report=html:htmlcov \
+            --cov-report=xml \
             --cov-report=term-missing \
             --durations=10 \
             -m "not integration and not e2e and not slow"

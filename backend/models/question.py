@@ -1,6 +1,9 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, func, JSON
+from sqlalchemy import (JSON, Column, DateTime, ForeignKey, Integer, String,
+                        func)
 from sqlalchemy.orm import relationship
+
 from models.base import Base
+
 
 class Question(Base):
     __tablename__ = "questions"
@@ -11,4 +14,4 @@ class Question(Base):
     correct_answer = Column(Integer, nullable=False)  # Index of correct option
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    quiz = relationship("Quiz", backref="questions") 
+    quiz = relationship("Quiz", backref="questions")

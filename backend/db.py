@@ -1,7 +1,8 @@
 import os
+
+from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -14,7 +15,7 @@ DATABASE_URLS = {
     "development": "postgresql://postgres:postgres@localhost:5433/quizness",
     # Use Docker PostgreSQL for tests
     "test": "postgresql://postgres:postgres@localhost:5433/quizness_test",
-    "production": os.getenv("DATABASE_URL")  # For production (e.g., Heroku)
+    "production": os.getenv("DATABASE_URL"),  # For production (e.g., Heroku)
 }
 
 # Get the appropriate database URL
@@ -28,10 +29,11 @@ print(f"Connecting to database: {DATABASE_URI}")
 engine = create_engine(DATABASE_URI)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+
 def get_db():
     """Get database session."""
     db = SessionLocal()
     try:
         yield db
     finally:
-        db.close() 
+        db.close()

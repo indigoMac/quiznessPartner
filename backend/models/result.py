@@ -1,6 +1,8 @@
-from sqlalchemy import Column, Integer, ForeignKey, DateTime, func, JSON
+from sqlalchemy import JSON, Column, DateTime, ForeignKey, Integer, func
 from sqlalchemy.orm import relationship
+
 from models.base import Base
+
 
 class Result(Base):
     __tablename__ = "results"
@@ -12,4 +14,4 @@ class Result(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", backref="results")
-    quiz = relationship("Quiz", backref="results") 
+    quiz = relationship("Quiz", backref="results")

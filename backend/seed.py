@@ -1,8 +1,9 @@
-from db import SessionLocal
-from models.user import User
-from models.quiz import Quiz
-from models.question import Question
 from auth.auth_utils import get_password_hash
+from db import SessionLocal
+from models.question import Question
+from models.quiz import Quiz
+from models.user import User
+
 
 def seed_database():
     """Seed the database with initial data"""
@@ -13,7 +14,7 @@ def seed_database():
             test_user = User(
                 email="test@example.com",
                 hashed_password=get_password_hash("testpassword"),
-                is_active=True
+                is_active=True,
             )
             db.add(test_user)
             db.commit()
@@ -24,9 +25,7 @@ def seed_database():
 
             # Create a sample quiz
             quiz = Quiz(
-                title="Sample Quiz",
-                topic="General Knowledge",
-                user_id=test_user.id
+                title="Sample Quiz", topic="General Knowledge", user_id=test_user.id
             )
             db.add(quiz)
             db.commit()
@@ -38,14 +37,19 @@ def seed_database():
                     quiz_id=quiz.id,
                     question_text="What is the capital of France?",
                     options=["London", "Paris", "Berlin", "Madrid"],
-                    correct_answer=1
+                    correct_answer=1,
                 ),
                 Question(
                     quiz_id=quiz.id,
                     question_text="Who wrote 'Romeo and Juliet'?",
-                    options=["Charles Dickens", "William Shakespeare", "Jane Austen", "Mark Twain"],
-                    correct_answer=1
-                )
+                    options=[
+                        "Charles Dickens",
+                        "William Shakespeare",
+                        "Jane Austen",
+                        "Mark Twain",
+                    ],
+                    correct_answer=1,
+                ),
             ]
             db.bulk_save_objects(questions)
             db.commit()
@@ -56,7 +60,8 @@ def seed_database():
     finally:
         db.close()
 
+
 if __name__ == "__main__":
     print("Seeding database...")
     seed_database()
-    print("Done!") 
+    print("Done!")
