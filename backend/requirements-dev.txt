@@ -1,0 +1,38 @@
+# Production requirements
+-r requirements.txt
+
+# Testing
+pytest==7.4.4
+pytest-cov==4.1.0
+pytest-asyncio==0.21.1
+pytest-env==0.8.2
+pytest-mock==3.12.0
+pytest-xdist==3.5.0
+factory-boy==3.3.0
+faker==20.1.0
+
+# Development and debugging
+black==23.12.1
+isort==5.13.2
+flake8==7.0.0
+mypy==1.8.0
+pre-commit==3.6.0
+
+# Database testing
+pytest-postgresql==5.0.0
+sqlalchemy-utils==0.41.1
+
+# Load testing
+locust==2.17.0
+
+# API testing
+httpx==0.25.2
+requests==2.31.0
+
+# Development utilities
+ipdb==0.13.13
+rich==13.7.0
+python-dotenv==1.0.0
+
+# Type hints
+types-requests==2.31.0.10 

@@ -1,0 +1,31 @@
+[run]
+source = .
+omit =
+    */venv/*
+    */env/*
+    */site-packages/*
+    */tests/*
+    */migrations/*
+    */__pycache__/*
+    */conftest.py
+    setup.py
+    run_tests.sh
+    print_db_uri.py
+    seed.py
+    setup_db.py
+    init_db.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+
+[html]
+directory = htmlcov
+
+[xml]
+output = coverage.xml

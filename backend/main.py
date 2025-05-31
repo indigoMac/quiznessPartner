@@ -7,13 +7,29 @@ import os
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 import uuid
+from pydantic_settings import BaseSettings
 
 # Import utility modules
 from db_utils import get_db, create_quiz, add_questions_to_quiz, get_quiz_with_questions, record_quiz_result
 from ai_utils import extract_text_from_pdf, generate_quiz_from_text
+from auth import auth_router
+from models.user import User
+from auth.dependencies import get_current_active_user, get_optional_user
 
 # Load environment variables
 load_dotenv()
+
+class Settings(BaseSettings):
+    secret_key: str
+    algorithm: str = "HS256"
+    access_token_expire_minutes: int = 30
+    cors_origins: List[str] = ["http://localhost:3000"]
+    environment: str = "development"
+
+    class Config:
+        env_file = ".env"
+
+settings = Settings()
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -25,12 +41,15 @@ app = FastAPI(
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For development; restrict in production
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
-    max_age=600,  # Increase max age for preflight requests cache
+    max_age=600,
 )
+
+# Include authentication router
+app.include_router(auth_router, prefix="/api/v1")
 
 # Health check endpoint
 @app.get("/health")
@@ -73,7 +92,8 @@ async def upload_document(
     file: UploadFile = File(...),
     topic: Optional[str] = Form(None),
     num_questions: Optional[int] = Form(5),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_user)
 ):
     try:
         # Extract text from PDF
@@ -88,7 +108,8 @@ async def upload_document(
         
         # Store quiz and questions in database
         title = f"Quiz on {topic}" if topic else f"Quiz from {file.filename}"
-        quiz = create_quiz(db, title=title, topic=topic)
+        user_id = current_user.id if current_user else None
+        quiz = create_quiz(db, title=title, topic=topic, user_id=user_id)
         add_questions_to_quiz(db, quiz.id, questions)
         
         return {
@@ -101,7 +122,11 @@ async def upload_document(
 
 # Quiz generation endpoint
 @app.post("/api/v1/generate-quiz", response_model=QuizResponse)
-async def generate_quiz(request: QuizRequest, db: Session = Depends(get_db)):
+async def generate_quiz(
+    request: QuizRequest,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_user)
+):
     try:
         # Generate quiz questions using AI
         questions = generate_quiz_from_text(
@@ -112,7 +137,8 @@ async def generate_quiz(request: QuizRequest, db: Session = Depends(get_db)):
         
         # Store quiz and questions in database
         title = f"Quiz on {request.topic}" if request.topic else "Custom Quiz"
-        quiz = create_quiz(db, title=title, topic=request.topic)
+        user_id = current_user.id if current_user else None
+        quiz = create_quiz(db, title=title, topic=request.topic, user_id=user_id)
         add_questions_to_quiz(db, quiz.id, questions)
         
         return {
@@ -131,20 +157,29 @@ async def get_quiz(quiz_id: int, db: Session = Depends(get_db)):
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
     
+    print(f"Raw quiz data: {quiz.__dict__}")
+    print(f"Raw questions data: {[q.__dict__ for q in questions]}")
+    
     # Convert DB models to API response format
     questions_data = [
         {
+            "id": q.id,
             "question": q.question_text,
             "options": q.options,
             "correct_answer": q.correct_answer
         } for q in questions
     ]
     
-    return {
+    response_data = {
         "id": str(quiz.id),
+        "title": quiz.title,
         "questions": questions_data,
         "topic": quiz.topic
     }
+    
+    print(f"Final response data: {response_data}")
+    
+    return response_data
 
 # Submit quiz answers and get results
 @app.post("/api/v1/submit-answer", response_model=QuizResult)

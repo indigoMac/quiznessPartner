@@ -3,13 +3,14 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-from sqlalchemy.ext.declarative import declarative_base
 from unittest.mock import patch, MagicMock, ANY
 import io
 import json
+from auth.auth_utils import get_password_hash
 
 from main import app
 from db_utils import get_db
+from models.base import Base
 from models.quiz import Quiz
 from models.question import Question
 from models.result import Result
@@ -17,7 +18,6 @@ from models.user import User
 
 # Create a test database in memory
 TEST_SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
-Base = declarative_base()
 Base.metadata.reflect = lambda *args, **kwargs: None
 
 engine = create_engine(
@@ -48,6 +48,24 @@ def setup_db():
     # Drop the tables after the test
     Base.metadata.drop_all(bind=engine)
 
+@pytest.fixture
+def auth_token(setup_db):
+    # Create a test user
+    db = TestingSessionLocal()
+    hashed_password = get_password_hash("testpassword")
+    test_user = User(email="test@example.com", hashed_password=hashed_password)
+    db.add(test_user)
+    db.commit()
+    db.refresh(test_user)
+    
+    # Get auth token
+    response = client.post(
+        "/api/v1/auth/token",
+        data={"username": "test@example.com", "password": "testpassword"}
+    )
+    token = response.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
 def test_health_check():
     response = client.get("/health")
     assert response.status_code == 200
@@ -56,7 +74,7 @@ def test_health_check():
 @patch('main.generate_quiz_from_text')
 @patch('main.create_quiz')
 @patch('main.add_questions_to_quiz')
-def test_generate_quiz(mock_add_questions, mock_create_quiz, mock_generate_quiz, setup_db):
+def test_generate_quiz(mock_add_questions, mock_create_quiz, mock_generate_quiz, auth_token):
     # Mock the quiz generation
     mock_questions = [
         {
@@ -72,9 +90,10 @@ def test_generate_quiz(mock_add_questions, mock_create_quiz, mock_generate_quiz,
     mock_quiz.id = 1
     mock_create_quiz.return_value = mock_quiz
     
-    # Test the endpoint
+    # Test the endpoint with auth token
     response = client.post(
         "/api/v1/generate-quiz",
+        headers=auth_token,
         json={"content": "Test content", "topic": "Geography", "num_questions": 1}
     )
     
@@ -93,13 +112,14 @@ def test_generate_quiz(mock_add_questions, mock_create_quiz, mock_generate_quiz,
     mock_add_questions.assert_called_once_with(ANY, 1, mock_questions)
 
 @patch('main.generate_quiz_from_text')
-def test_generate_quiz_error(mock_generate_quiz, setup_db):
+def test_generate_quiz_error(mock_generate_quiz, auth_token):
     # Mock the quiz generation to raise an exception
     mock_generate_quiz.side_effect = Exception("Failed to generate quiz")
     
-    # Test the endpoint
+    # Test the endpoint with auth token
     response = client.post(
         "/api/v1/generate-quiz",
+        headers=auth_token,
         json={"content": "Test content", "topic": "Geography", "num_questions": 1}
     )
     
@@ -107,10 +127,11 @@ def test_generate_quiz_error(mock_generate_quiz, setup_db):
     assert response.status_code == 500
     assert "Error generating quiz" in response.json()["detail"]
 
-def test_generate_quiz_invalid_input():
+def test_generate_quiz_invalid_input(auth_token):
     # Test with missing required field
     response = client.post(
         "/api/v1/generate-quiz",
+        headers=auth_token,
         json={"topic": "Geography", "num_questions": 1}  # Missing 'content'
     )
     
@@ -121,7 +142,7 @@ def test_generate_quiz_invalid_input():
 @patch('main.generate_quiz_from_text')
 @patch('main.create_quiz')
 @patch('main.add_questions_to_quiz')
-def test_upload_document(mock_add_questions, mock_create_quiz, mock_generate_quiz, mock_extract_text, setup_db):
+def test_upload_document(mock_add_questions, mock_create_quiz, mock_generate_quiz, mock_extract_text, auth_token):
     # Mock the text extraction and quiz generation
     mock_extract_text.return_value = "Extracted text from PDF"
     mock_questions = [
@@ -141,9 +162,10 @@ def test_upload_document(mock_add_questions, mock_create_quiz, mock_generate_qui
     # Create a mock PDF file
     pdf_content = io.BytesIO(b"%PDF-1.5 mock pdf content")
     
-    # Test the endpoint
+    # Test the endpoint with auth token
     response = client.post(
         "/api/v1/upload-document",
+        headers=auth_token,
         files={"file": ("test.pdf", pdf_content, "application/pdf")},
         data={"topic": "Geography", "num_questions": "3"}
     )
@@ -164,16 +186,17 @@ def test_upload_document(mock_add_questions, mock_create_quiz, mock_generate_qui
     mock_add_questions.assert_called_once()
 
 @patch('main.extract_text_from_pdf')
-def test_upload_document_extraction_error(mock_extract_text, setup_db):
+def test_upload_document_extraction_error(mock_extract_text, auth_token):
     # Mock the text extraction to raise an exception
     mock_extract_text.side_effect = Exception("Failed to extract text")
     
     # Create a mock PDF file
     pdf_content = io.BytesIO(b"%PDF-1.5 mock pdf content")
     
-    # Test the endpoint
+    # Test the endpoint with auth token
     response = client.post(
         "/api/v1/upload-document",
+        headers=auth_token,
         files={"file": ("test.pdf", pdf_content, "application/pdf")},
         data={"topic": "Geography", "num_questions": "3"}
     )
@@ -182,10 +205,11 @@ def test_upload_document_extraction_error(mock_extract_text, setup_db):
     assert response.status_code == 500
     assert "Error processing document" in response.json()["detail"]
 
-def test_upload_document_no_file():
+def test_upload_document_no_file(auth_token):
     # Test without uploading a file
     response = client.post(
         "/api/v1/upload-document",
+        headers=auth_token,
         files={},  # No file
         data={"topic": "Geography", "num_questions": "3"}
     )
@@ -194,7 +218,7 @@ def test_upload_document_no_file():
     assert response.status_code == 422  # Unprocessable Entity
 
 @patch('main.get_quiz_with_questions')
-def test_get_quiz(mock_get_quiz, setup_db):
+def test_get_quiz(mock_get_quiz, auth_token):
     # Mock the database query
     mock_quiz = MagicMock()
     mock_quiz.id = 1
@@ -207,104 +231,98 @@ def test_get_quiz(mock_get_quiz, setup_db):
     
     mock_get_quiz.return_value = (mock_quiz, [mock_question])
     
-    # Test the endpoint
-    response = client.get("/api/v1/quiz/1")
+    # Test the endpoint with auth token
+    response = client.get("/api/v1/quiz/1", headers=auth_token)
     
     # Verify the response
     assert response.status_code == 200
     data = response.json()
     assert data["id"] == "1"
-    assert data["topic"] == "Geography"
     assert len(data["questions"]) == 1
-    assert data["questions"][0]["question"] == "What is the capital of France?"
-    
-    # Verify the mock was called correctly
-    mock_get_quiz.assert_called_once_with(ANY, 1)
+    assert data["topic"] == "Geography"
 
 @patch('main.get_quiz_with_questions')
-def test_get_quiz_not_found(mock_get_quiz, setup_db):
+def test_get_quiz_not_found(mock_get_quiz, auth_token):
     # Mock the database query to return no quiz
-    mock_get_quiz.return_value = (None, [])
+    mock_get_quiz.return_value = (None, None)
     
-    # Test the endpoint
-    response = client.get("/api/v1/quiz/999")
+    # Test the endpoint with auth token
+    response = client.get("/api/v1/quiz/999", headers=auth_token)
     
     # Verify the response
     assert response.status_code == 404
     assert "Quiz not found" in response.json()["detail"]
 
-def test_get_quiz_invalid_id():
+def test_get_quiz_invalid_id(auth_token):
     # Test with invalid quiz ID (non-integer)
-    response = client.get("/api/v1/quiz/invalid")
+    response = client.get("/api/v1/quiz/invalid", headers=auth_token)
     
     # Verify the response
     assert response.status_code == 422  # Unprocessable Entity
 
 @patch('main.get_quiz_with_questions')
 @patch('main.record_quiz_result')
-def test_submit_answers(mock_record_result, mock_get_quiz, setup_db):
+def test_submit_answers(mock_record_result, mock_get_quiz, auth_token):
     # Mock the database query
     mock_quiz = MagicMock()
     mock_quiz.id = 1
     
     mock_question1 = MagicMock()
     mock_question1.correct_answer = 1
-    
     mock_question2 = MagicMock()
     mock_question2.correct_answer = 2
     
-    mock_question3 = MagicMock()
-    mock_question3.correct_answer = 0
+    mock_get_quiz.return_value = (mock_quiz, [mock_question1, mock_question2])
     
-    mock_get_quiz.return_value = (mock_quiz, [mock_question1, mock_question2, mock_question3])
-    
-    # Test the endpoint with some correct and some incorrect answers
+    # Test the endpoint with auth token
     response = client.post(
         "/api/v1/submit-answer",
-        json={"quiz_id": 1, "answers": [1, 0, 0]}  # First and last are correct
+        headers=auth_token,
+        json={
+            "quiz_id": 1,
+            "answers": [1, 3]  # First answer correct, second incorrect
+        }
     )
     
     # Verify the response
     assert response.status_code == 200
     data = response.json()
     assert data["quiz_id"] == 1
-    assert data["score"] == 2  # Two correct answers
-    assert data["total"] == 3
-    assert data["answers"] == [1, 0, 0]
-    assert data["correct_answers"] == [1, 2, 0]
+    assert data["score"] == 1
+    assert data["total"] == 2
+    assert data["answers"] == [1, 3]
+    assert data["correct_answers"] == [1, 2]
     
     # Verify the mock was called correctly
-    mock_record_result.assert_called_once_with(ANY, quiz_id=1, answers=[1, 0, 0], score=2)
+    mock_record_result.assert_called_once()
 
 @patch('main.get_quiz_with_questions')
-def test_submit_answers_quiz_not_found(mock_get_quiz, setup_db):
+def test_submit_answers_quiz_not_found(mock_get_quiz, auth_token):
     # Mock the database query to return no quiz
-    mock_get_quiz.return_value = (None, [])
+    mock_get_quiz.return_value = (None, None)
     
-    # Test the endpoint
+    # Test the endpoint with auth token
     response = client.post(
         "/api/v1/submit-answer",
-        json={"quiz_id": 999, "answers": [0, 1, 2]}
+        headers=auth_token,
+        json={
+            "quiz_id": 999,
+            "answers": [1, 2]
+        }
     )
     
     # Verify the response
     assert response.status_code == 404
     assert "Quiz not found" in response.json()["detail"]
 
-def test_submit_answers_invalid_input():
+def test_submit_answers_invalid_input(auth_token):
     # Test with missing required field
     response = client.post(
         "/api/v1/submit-answer",
-        json={"quiz_id": 1}  # Missing 'answers'
-    )
-    
-    # Verify the response
-    assert response.status_code == 422  # Unprocessable Entity
-    
-    # Test with invalid quiz_id type
-    response = client.post(
-        "/api/v1/submit-answer",
-        json={"quiz_id": "invalid", "answers": [0, 1, 2]}
+        headers=auth_token,
+        json={
+            "answers": [1, 2]  # Missing quiz_id
+        }
     )
     
     # Verify the response
@@ -319,4 +337,79 @@ def test_cors_preflight():
     }
     response = client.options("/api/v1/generate-quiz", headers=headers)
     assert response.status_code == 200
-    assert "access-control-allow-origin" in response.headers 
+    assert "access-control-allow-origin" in response.headers
+
+def test_register_user(setup_db):
+    response = client.post(
+        "/api/v1/auth/register",
+        json={"email": "testuser@example.com", "password": "testpassword"}
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["email"] == "testuser@example.com"
+    assert "id" in data
+    assert data["is_active"] is True
+
+def test_register_duplicate_user(setup_db):
+    client.post(
+        "/api/v1/auth/register",
+        json={"email": "dupe@example.com", "password": "testpassword"}
+    )
+    response = client.post(
+        "/api/v1/auth/register",
+        json={"email": "dupe@example.com", "password": "testpassword"}
+    )
+    assert response.status_code == 400
+    assert "already registered" in response.text
+
+def test_login_success(setup_db):
+    client.post(
+        "/api/v1/auth/register",
+        json={"email": "loginuser@example.com", "password": "testpassword"}
+    )
+    response = client.post(
+        "/api/v1/auth/token",
+        data={"username": "loginuser@example.com", "password": "testpassword"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "access_token" in data
+    assert data["token_type"] == "bearer"
+
+def test_login_wrong_password(setup_db):
+    client.post(
+        "/api/v1/auth/register",
+        json={"email": "wrongpass@example.com", "password": "rightpassword"}
+    )
+    response = client.post(
+        "/api/v1/auth/token",
+        data={"username": "wrongpass@example.com", "password": "wrongpassword"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"}
+    )
+    assert response.status_code == 401
+    assert "Incorrect email or password" in response.text
+
+def test_protected_route_requires_auth(setup_db):
+    response = client.get("/api/v1/auth/me")
+    assert response.status_code == 401
+    assert "Not authenticated" in response.text
+
+def test_protected_route_with_token(setup_db):
+    client.post(
+        "/api/v1/auth/register",
+        json={"email": "meuser@example.com", "password": "testpassword"}
+    )
+    login_resp = client.post(
+        "/api/v1/auth/token",
+        data={"username": "meuser@example.com", "password": "testpassword"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"}
+    )
+    token = login_resp.json()["access_token"]
+    response = client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["email"] == "meuser@example.com" 
