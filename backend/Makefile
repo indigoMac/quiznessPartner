@@ -47,31 +47,31 @@ install-dev:
 # Testing commands
 test-unit:
 	@echo "Running unit tests..."
-	bash scripts/test_local.sh unit
+	python3 -m pytest tests/unit/ -v
 
 test-integration:
 	@echo "Running integration tests..."
-	bash scripts/test_local.sh integration
+	python3 -m pytest tests/integration/ -v
 
 test-e2e:
 	@echo "Running end-to-end tests..."
-	bash scripts/test_local.sh e2e
+	python3 -m pytest tests/e2e/ -v
 
 test-performance:
 	@echo "Running performance tests..."
-	bash scripts/test_local.sh performance
+	python3 -m pytest tests/performance/ -v
 
 test-load:
 	@echo "Running load tests..."
-	bash scripts/test_local.sh load
+	python3 -m pytest tests/performance/ -v
 
 test-all:
 	@echo "Running complete test suite..."
-	bash scripts/test_local.sh all
+	python3 -m pytest tests/ --cov=. --cov-report=html --cov-report=xml
 
 test-fast:
 	@echo "Running fast test suite..."
-	bash scripts/test_local.sh fast
+	python3 -m pytest tests/unit/ -v
 
 # Alias for most common test command
 test: test-unit
@@ -93,6 +93,7 @@ type-check:
 
 security:
 	@echo "Running security checks..."
+	mkdir -p test-reports
 	python3 -m bandit -r . -f json -o test-reports/security.json || true
 	python3 -m bandit -r . -f txt
 
@@ -112,7 +113,12 @@ migrate:
 # Maintenance
 clean:
 	@echo "Cleaning up test artifacts..."
-	bash scripts/test_local.sh clean
+	rm -rf .pytest_cache
+	rm -rf htmlcov
+	rm -rf test-reports
+	rm -rf .coverage
+	find . -type d -name __pycache__ -delete
+	find . -type f -name "*.pyc" -delete
 
 coverage:
 	@echo "Opening coverage report..."
@@ -160,7 +166,7 @@ db-restore:
 # CI/CD commands
 ci-test:
 	@echo "Running CI test suite..."
-	TEST_ENV=ci bash scripts/test_local.sh all
+	python3 -m pytest tests/ --cov=. --cov-report=html --cov-report=xml
 
 ci-quality:
 	@echo "Running CI quality checks..."
