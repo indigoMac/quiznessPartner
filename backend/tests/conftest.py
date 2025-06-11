@@ -18,10 +18,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-# Set test environment
+# Set test environment before importing app modules
 os.environ["ENVIRONMENT"] = "test"
 os.environ["TESTING"] = "1"
 
+# Import after setting environment
+import db
 from db_utils import get_db
 from main import app
 from models.base import Base
@@ -46,6 +48,9 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_environment():
     """Set up test environment configuration."""
+    # Reset any existing database connections
+    db.reset_db_connection()
+    
     # Mock external services during testing
     with patch.dict(
         os.environ,
@@ -58,6 +63,9 @@ def setup_test_environment():
         },
     ):
         yield
+    
+    # Cleanup after all tests
+    db.reset_db_connection()
 
 
 @pytest.fixture(scope="function")
