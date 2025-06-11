@@ -71,7 +71,7 @@ class TestIntegrationWorkflow:
         response = client.get(f"/api/v1/quiz/{quiz_id}")
         assert response.status_code == 200
         retrieved_quiz = response.json()
-        assert retrieved_quiz["id"] == quiz_id
+        assert retrieved_quiz["id"] == int(quiz_id)
         assert len(retrieved_quiz["questions"]) == 2
 
         # Step 4: Submit answers
@@ -87,14 +87,14 @@ class TestIntegrationWorkflow:
         assert result["quiz_id"] == int(quiz_id)
 
     def test_quiz_with_authentication_flow(
-        self, client: TestClient, db_session: Session, test_user: User
+        self, client: TestClient, db_session: Session, sample_user: User
     ):
         """Test quiz creation and access with proper authentication."""
 
         # Step 1: Login
         response = client.post(
             "/api/v1/auth/token",
-            data={"username": test_user.email, "password": "testpassword"},
+            data={"username": sample_user.email, "password": "testpass123"},
         )
         assert response.status_code == 200
         token = response.json()["access_token"]
@@ -125,7 +125,7 @@ class TestIntegrationWorkflow:
 
         # Verify quiz is associated with the user
         quiz = db_session.query(Quiz).filter(Quiz.id == int(quiz_data["id"])).first()
-        assert quiz.user_id == test_user.id
+        assert quiz.user_id == sample_user.id
 
     def test_quiz_without_authentication(self, client: TestClient, db_session: Session):
         """Test quiz creation without authentication (anonymous users)."""

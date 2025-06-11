@@ -39,20 +39,24 @@ def get_engine() -> Engine:
     global engine
     if engine is None:
         print(f"Initializing database connection: {DATABASE_URI}")
-        
+
         if TESTING:
             # For PostgreSQL in CI/testing, add connection timeout and pooling
+            connect_args = {}
+            if DATABASE_URI.startswith("postgresql"):
+                connect_args = {"connect_timeout": 5}
+
             engine = create_engine(
                 DATABASE_URI,
                 pool_timeout=5,
                 pool_recycle=300,
                 pool_pre_ping=True,  # Verify connections before use
-                connect_args={"connect_timeout": 5} if DATABASE_URI.startswith("postgresql") else {},
+                connect_args=connect_args,
                 echo=False
             )
         else:
             engine = create_engine(DATABASE_URI)
-    
+
     return engine
 
 
@@ -60,7 +64,11 @@ def get_session_local():
     """Get SessionLocal with lazy initialization."""
     global SessionLocal
     if SessionLocal is None:
-        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=get_engine())
+        SessionLocal = sessionmaker(
+            autocommit=False,
+            autoflush=False,
+            bind=get_engine()
+        )
     return SessionLocal
 
 
