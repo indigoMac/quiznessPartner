@@ -54,51 +54,27 @@ logs-frontend: ## 📝 Follow frontend logs only
 ##@ 🧪 Testing
 test: ## 🧪 Run all tests
 	@echo "$(BLUE)Running all tests...$(RESET)"
-	@if [ -f "backend/scripts/test_local.sh" ]; then \
-		cd backend && bash scripts/test_local.sh; \
-	else \
-		docker-compose exec backend pytest; \
-	fi
+	cd backend && python3 -m pytest tests/ --cov=. --cov-report=html --cov-report=xml
 
 test-unit: ## ⚡ Run unit tests only (fast)
 	@echo "$(BLUE)Running unit tests...$(RESET)"
-	@if [ -f "backend/scripts/test_local.sh" ]; then \
-		cd backend && bash scripts/test_local.sh unit; \
-	else \
-		docker-compose exec backend pytest -m "unit or not integration"; \
-	fi
+	cd backend && python3 -m pytest tests/unit/ -v
 
 test-integration: ## 🔗 Run integration tests
 	@echo "$(BLUE)Running integration tests...$(RESET)"
-	@if [ -f "backend/scripts/test_local.sh" ]; then \
-		cd backend && bash scripts/test_local.sh integration; \
-	else \
-		docker-compose exec backend pytest -m "integration"; \
-	fi
+	cd backend && python3 -m pytest tests/integration/ -v
 
 test-performance: ## 🏃 Run performance tests
 	@echo "$(BLUE)Running performance tests...$(RESET)"
-	@if [ -f "backend/scripts/test_local.sh" ]; then \
-		cd backend && bash scripts/test_local.sh performance; \
-	else \
-		docker-compose exec backend pytest -m "slow"; \
-	fi
+	cd backend && python3 -m pytest tests/performance/ -v
 
 test-e2e: ## 🎯 Run end-to-end tests
 	@echo "$(BLUE)Running end-to-end tests...$(RESET)"
-	@if [ -f "backend/scripts/test_local.sh" ]; then \
-		cd backend && bash scripts/test_local.sh e2e; \
-	else \
-		docker-compose exec backend pytest -m "e2e"; \
-	fi
+	cd backend && python3 -m pytest tests/e2e/ -v
 
 test-fast: ## ⚡ Run fast test suite (unit tests only)
 	@echo "$(BLUE)Running fast test suite...$(RESET)"
-	@if [ -f "backend/scripts/test_local.sh" ]; then \
-		cd backend && bash scripts/test_local.sh fast; \
-	else \
-		docker-compose exec backend pytest -m "unit"; \
-	fi
+	cd backend && python3 -m pytest tests/unit/ -v
 
 test-coverage: ## 📊 Generate test coverage report
 	@echo "$(BLUE)Generating coverage report...$(RESET)"
@@ -107,19 +83,11 @@ test-coverage: ## 📊 Generate test coverage report
 
 load-test: ## 🚛 Run load tests
 	@echo "$(BLUE)Running load tests...$(RESET)"
-	@if [ -f "backend/scripts/test_local.sh" ]; then \
-		cd backend && bash scripts/test_local.sh load; \
-	else \
-		echo "$(YELLOW)Load test script not found$(RESET)"; \
-	fi
+	cd backend && python3 -m pytest tests/performance/ -v
 
 load-test-quick: ## ⚡ Quick 2-minute load test
 	@echo "$(BLUE)Running quick load test...$(RESET)"
-	@if [ -f "backend/scripts/load_test.sh" ]; then \
-		backend/scripts/load_test.sh --headless -u 20 -r 4 -t 2m; \
-	else \
-		echo "$(YELLOW)Load test script not found$(RESET)"; \
-	fi
+	cd backend && locust --headless -u 20 -r 4 -t 2m --host=http://localhost:8000
 
 ##@ 🎨 Code Quality
 format: ## 🎨 Format code with Black and isort
