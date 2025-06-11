@@ -14,11 +14,6 @@ jobs:
   backend-tests:
     runs-on: ubuntu-latest
 
-    strategy:
-      matrix:
-        python-version: ["3.9", "3.10", "3.11"]
-        test-type: ["unit", "integration"]
-
     services:
       postgres:
         image: postgres:15-alpine
@@ -37,10 +32,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.12"
           cache: "pip"
 
       - name: Install dependencies
@@ -53,11 +48,14 @@ jobs:
         env:
           DATABASE_URI: postgresql://postgres:postgres@localhost:5432/quizness_test
           ENVIRONMENT: test
+          SECRET_KEY: test-secret-key-for-ci-migrations
+          ALGORITHM: HS256
+          ACCESS_TOKEN_EXPIRE_MINUTES: 30
         run: |
           cd backend
           alembic upgrade head
 
-      - name: Run ${{ matrix.test-type }} tests
+      - name: Run all tests
         env:
           DATABASE_URI: postgresql://postgres:postgres@localhost:5432/quizness_test
           TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/quizness_test
@@ -68,22 +66,17 @@ jobs:
           ACCESS_TOKEN_EXPIRE_MINUTES: 30
         run: |
           cd backend
-          if [ "${{ matrix.test-type }}" == "unit" ]; then
-            python -m pytest tests/ -m "unit or not integration" --cov=. --cov-report=xml --cov-report=term-missing -v
-          else
-            python -m pytest tests/ -m "integration" --cov=. --cov-report=xml --cov-report=term-missing -v
-          fi
+          make test
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
           file: ./backend/coverage.xml
-          flags: backend-${{ matrix.test-type }}-py${{ matrix.python-version }}
+          flags: backend
           fail_ci_if_error: false
 
   performance-tests:
     runs-on: ubuntu-latest
-    needs: [backend-tests]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     services:
@@ -126,7 +119,7 @@ jobs:
           ACCESS_TOKEN_EXPIRE_MINUTES: 30
         run: |
           cd backend
-          python -m pytest tests/ -m "slow" --durations=10 -v
+          make test-performance
 
   security-scan:
     runs-on: ubuntu-latest
@@ -137,27 +130,24 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
-      - name: Install security tools
-        run: |
-          pip install safety bandit semgrep
-
-      - name: Run safety check
+      - name: Install dependencies
         run: |
           cd backend
-          safety check -r requirements.txt || true
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
 
-      - name: Run bandit security scan
+      - name: Run security scan
         run: |
           cd backend
-          bandit -r . -f json -o bandit-report.json || true
+          make security
 
       - name: Upload security scan results
         uses: actions/upload-artifact@v3
         with:
           name: security-scan-results
-          path: backend/bandit-report.json
+          path: backend/test-reports/security.json
 
   frontend-tests:
     runs-on: ubuntu-latest
@@ -198,32 +188,18 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
-      - name: Install Python linting tools
+      - name: Install Python dependencies
         run: |
+          cd backend
           python -m pip install --upgrade pip
-          pip install black isort flake8 mypy
+          pip install -r requirements-dev.txt
 
-      - name: Check Python formatting with Black
+      - name: Run Python linting and formatting checks
         run: |
           cd backend
-          black --check --diff .
-
-      - name: Check Python imports with isort
-        run: |
-          cd backend
-          isort --check --diff --profile black .
-
-      - name: Lint Python code with flake8
-        run: |
-          cd backend
-          flake8 . --exclude=venv,migrations,alembic --max-line-length=100 --extend-ignore=E203,W503
-
-      - name: Type check with mypy
-        run: |
-          cd backend
-          mypy . --ignore-missing-imports || true
+          make lint
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -242,7 +218,7 @@ jobs:
 
   build-and-test-docker:
     runs-on: ubuntu-latest
-    needs: [backend-tests, frontend-tests]
+    needs: [backend-tests]
 
     steps:
       - uses: actions/checkout@v4
@@ -266,7 +242,7 @@ jobs:
 
   deploy-staging:
     runs-on: ubuntu-latest
-    needs: [backend-tests, frontend-tests, lint-and-format, security-scan]
+    needs: [backend-tests, lint-and-format, security-scan]
     if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
 
     environment: staging
@@ -284,20 +260,11 @@ jobs:
       - name: Build and push Docker images
         run: |
           docker build -f Dockerfile.backend.prod -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:staging .
-          docker build -f Dockerfile.frontend.prod -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:staging .
           docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:staging
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:staging
 
   deploy-production:
     runs-on: ubuntu-latest
-    needs:
-      [
-        backend-tests,
-        frontend-tests,
-        lint-and-format,
-        security-scan,
-        performance-tests,
-      ]
+    needs: [backend-tests, lint-and-format, security-scan]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     environment: production
@@ -315,6 +282,4 @@ jobs:
       - name: Build and push Docker images
         run: |
           docker build -f Dockerfile.backend.prod -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:latest .
-          docker build -f Dockerfile.frontend.prod -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:latest .
           docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:latest
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:latest

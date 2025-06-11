@@ -1,5 +1,5 @@
 import io
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -161,17 +161,17 @@ class TestIntegrationWorkflow:
         """Test that data persists correctly in the database."""
 
         # Create multiple quizzes
-        with patch("main.generate_quiz_from_text") as mock_generate:
-            mock_generate.return_value = [
-                {
-                    "question": f"Question {i}?",
-                    "options": ["A", "B", "C", "D"],
-                    "correct_answer": i % 4,
-                }
-            ]
+        quiz_ids = []
+        for i in range(3):
+            with patch("main.generate_quiz_from_text") as mock_generate:
+                mock_generate.return_value = [
+                    {
+                        "question": f"Question {i}?",
+                        "options": ["A", "B", "C", "D"],
+                        "correct_answer": i % 4,
+                    }
+                ]
 
-            quiz_ids = []
-            for i in range(3):
                 response = client.post(
                     "/api/v1/generate-quiz",
                     headers=auth_headers,

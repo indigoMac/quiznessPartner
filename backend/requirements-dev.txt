@@ -18,6 +18,9 @@ flake8==7.0.0
 mypy==1.8.0
 pre-commit==3.6.0
 
+# Security scanning
+bandit==1.7.5
+
 # Database testing
 pytest-postgresql==5.0.0
 sqlalchemy-utils==0.41.1

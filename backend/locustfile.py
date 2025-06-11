@@ -1,4 +1,3 @@
-import json
 import random
 
 from locust import HttpUser, between, task
@@ -146,12 +145,14 @@ class AdminUser(HttpUser):
         """Admin users always authenticate."""
         email = f"admin{random.randint(1, 100)}@example.com"
 
-        self.client.post(
-            "/api/v1/auth/register", json={"email": email, "password": "adminpassword"}
+        response = self.client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": "adminpassword"}
         )
 
         response = self.client.post(
-            "/api/v1/auth/token", data={"username": email, "password": "adminpassword"}
+            "/api/v1/auth/token",
+            data={"username": email, "password": "adminpassword"}
         )
 
         if response.status_code == 200:
@@ -161,8 +162,10 @@ class AdminUser(HttpUser):
     def create_large_quiz(self):
         """Create larger quizzes with more questions."""
         payload = {
-            "content": "This is a comprehensive study material covering multiple topics "
-            * 10,
+            "content": (
+                "This is comprehensive study material covering "
+                "multiple topics " * 10
+            ),
             "topic": "Comprehensive Study",
             "num_questions": random.randint(15, 25),
         }

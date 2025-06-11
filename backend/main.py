@@ -12,13 +12,8 @@ from ai_utils import extract_text_from_pdf, generate_quiz_from_text
 from auth import auth_router
 from auth.dependencies import get_optional_user
 # Import utility modules
-from db_utils import (
-    add_questions_to_quiz,
-    create_quiz,
-    get_db,
-    get_quiz_with_questions,
-    record_quiz_result,
-)
+from db_utils import (add_questions_to_quiz, create_quiz, get_db,
+                      get_quiz_with_questions, record_quiz_result)
 from models.user import User
 
 # Load environment variables
@@ -256,4 +251,5 @@ async def submit_answer(submission: AnswerSubmission, db: Session = Depends(get_
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Binding to all interfaces is intentional for Docker deployment
+    uvicorn.run(app, host="0.0.0.0", port=8000)  # nosec B104

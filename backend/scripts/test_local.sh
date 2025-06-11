@@ -224,25 +224,56 @@ case "$1" in
         ;;
     
     *)
-        echo "QuizNess Backend Testing Suite"
-        echo ""
-        echo "Usage: $0 [COMMAND]"
-        echo ""
-        echo "Commands:"
-        echo "    unit            Run unit tests only"
-        echo "    integration     Run integration tests only"  
-        echo "    e2e             Run end-to-end tests only"
-        echo "    performance     Run performance tests only"
-        echo "    load            Run load tests (server must be running)"
-        echo "    all             Run complete test suite"
-        echo "    fast            Run fast test suite (unit tests)"
-        echo "    install         Install test dependencies"
-        echo "    clean           Clean up test artifacts"
-        echo ""
-        echo "Examples:"
-        echo "    $0 unit         # Run unit tests"
-        echo "    $0 integration  # Run integration tests"
-        echo "    $0 all          # Run all tests"
-        echo "    $0 load         # Run load tests"
+        # If no argument provided, run all tests
+        if [ $# -eq 0 ]; then
+            log_info "Running complete test suite..."
+            
+            # Unit tests first
+            $PYTEST_CMD tests/unit/ \
+                -v \
+                --cov=. \
+                --cov-report=html:htmlcov \
+                --cov-report=xml \
+                --cov-report=term-missing \
+                --durations=10 \
+                -m "not integration and not e2e and not slow"
+            
+            # Integration tests
+            setup_test_db
+            trap cleanup_test_db EXIT
+            
+            $PYTEST_CMD tests/integration/ \
+                -v \
+                --cov=. \
+                --cov-append \
+                --cov-report=html:htmlcov \
+                --cov-report=xml \
+                --cov-report=term-missing \
+                --durations=10 \
+                -m "integration"
+                
+            log_success "Complete test suite completed"
+        else
+            echo "QuizNess Backend Testing Suite"
+            echo ""
+            echo "Usage: $0 [COMMAND]"
+            echo ""
+            echo "Commands:"
+            echo "    unit            Run unit tests only"
+            echo "    integration     Run integration tests only"  
+            echo "    e2e             Run end-to-end tests only"
+            echo "    performance     Run performance tests only"
+            echo "    load            Run load tests (server must be running)"
+            echo "    all             Run complete test suite"
+            echo "    fast            Run fast test suite (unit tests)"
+            echo "    install         Install test dependencies"
+            echo "    clean           Clean up test artifacts"
+            echo ""
+            echo "Examples:"
+            echo "    $0 unit         # Run unit tests"
+            echo "    $0 integration  # Run integration tests"
+            echo "    $0 all          # Run all tests"
+            echo "    $0 load         # Run load tests"
+        fi
         ;;
 esac 

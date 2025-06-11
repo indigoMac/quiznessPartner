@@ -9,6 +9,7 @@ This file provides shared fixtures and configuration for all test types:
 """
 
 import os
+import tempfile
 from unittest.mock import patch
 
 import pytest
@@ -134,7 +135,7 @@ def sample_quiz(db_session, sample_user):
     quiz = QuizFactory.create(db_session, user=sample_user)
 
     # Add questions to the quiz
-    questions = QuestionFactory.create_batch(3, db_session, quiz=quiz)
+    _questions = QuestionFactory.create_batch(3, db_session, quiz=quiz)
 
     db_session.commit()
     return quiz
@@ -144,7 +145,7 @@ def sample_quiz(db_session, sample_user):
 def sample_quiz_with_results(db_session, sample_user):
     """Create a quiz with submitted results for testing."""
     quiz = QuizFactory.create(db_session, user=sample_user)
-    questions = QuestionFactory.create_batch(5, db_session, quiz=quiz)
+    _questions = QuestionFactory.create_batch(5, db_session, quiz=quiz)
 
     # Create quiz results
     result = QuizResultFactory.create(db_session, user=sample_user, quiz=quiz)

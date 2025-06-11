@@ -330,3 +330,33 @@ class TestModelRelationships:
         assert hasattr(quiz, "id")
         assert hasattr(question, "id")
         assert hasattr(result, "id")
+
+    def test_quiz_user_relationship(self):
+        """Test relationship between Quiz and User models."""
+        # We can test that the models have the right relationship structure
+        # without actually creating database relationships here
+
+        # Create instances to test attribute existence
+        User(email="test@example.com", hashed_password="hash")
+        quiz = Quiz(title="Test Quiz", topic="Test Topic", user_id=1)
+
+        # Verify foreign key structure
+        assert hasattr(quiz, "user_id")
+        assert quiz.user_id == 1
+
+    def test_question_quiz_relationship(self):
+        """Test relationship between Question and Quiz models."""
+        # We can test that the models have the right relationship structure
+
+        # Create instances to test attribute existence
+        Quiz(title="Test Quiz")
+        question = Question(
+            question_text="Test question?",
+            options=["A", "B", "C", "D"],
+            correct_answer=0,
+            quiz_id=1,
+        )
+
+        # Verify foreign key structure
+        assert hasattr(question, "quiz_id")
+        assert question.quiz_id == 1

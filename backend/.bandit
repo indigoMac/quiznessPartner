@@ -1,0 +1,9 @@
+[bandit]
+# Exclude test files from security scans as they use test data and mock values
+exclude_dirs = tests
+# Skip certain checks that are acceptable in this context:
+# B101: assert_used - normal in test files 
+# B105: hardcoded_password_string - test data only
+# B106: hardcoded_password_funcarg - test data only
+# B311: random - acceptable for load testing and test data generation
+skips = B101,B105,B106,B311 

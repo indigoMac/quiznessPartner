@@ -11,10 +11,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import all models so Alembic can detect them
 from models.base import Base
-from models.question import Question
-from models.quiz import Quiz
-from models.result import Result
-from models.user import User
+from models.question import Question  # noqa: F401
+from models.quiz import Quiz  # noqa: F401
+from models.result import Result  # noqa: F401
+from models.user import User  # noqa: F401
 
 # Load .env file
 load_dotenv()

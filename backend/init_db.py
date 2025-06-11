@@ -1,9 +1,10 @@
 from db import engine
 from models.base import Base
-from models.question import Question
-from models.quiz import Quiz
-from models.result import Result
-from models.user import User
+# Import models to register them with SQLAlchemy metadata
+from models.question import Question  # noqa: F401
+from models.quiz import Quiz  # noqa: F401
+from models.result import Result  # noqa: F401
+from models.user import User  # noqa: F401
 
 
 def init_db():

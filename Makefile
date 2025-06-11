@@ -55,7 +55,7 @@ logs-frontend: ## 📝 Follow frontend logs only
 test: ## 🧪 Run all tests
 	@echo "$(BLUE)Running all tests...$(RESET)"
 	@if [ -f "backend/scripts/test_local.sh" ]; then \
-		backend/scripts/test_local.sh; \
+		cd backend && bash scripts/test_local.sh; \
 	else \
 		docker-compose exec backend pytest; \
 	fi
@@ -63,7 +63,7 @@ test: ## 🧪 Run all tests
 test-unit: ## ⚡ Run unit tests only (fast)
 	@echo "$(BLUE)Running unit tests...$(RESET)"
 	@if [ -f "backend/scripts/test_local.sh" ]; then \
-		backend/scripts/test_local.sh --type unit; \
+		cd backend && bash scripts/test_local.sh unit; \
 	else \
 		docker-compose exec backend pytest -m "unit or not integration"; \
 	fi
@@ -71,7 +71,7 @@ test-unit: ## ⚡ Run unit tests only (fast)
 test-integration: ## 🔗 Run integration tests
 	@echo "$(BLUE)Running integration tests...$(RESET)"
 	@if [ -f "backend/scripts/test_local.sh" ]; then \
-		backend/scripts/test_local.sh --type integration; \
+		cd backend && bash scripts/test_local.sh integration; \
 	else \
 		docker-compose exec backend pytest -m "integration"; \
 	fi
@@ -79,9 +79,25 @@ test-integration: ## 🔗 Run integration tests
 test-performance: ## 🏃 Run performance tests
 	@echo "$(BLUE)Running performance tests...$(RESET)"
 	@if [ -f "backend/scripts/test_local.sh" ]; then \
-		backend/scripts/test_local.sh --type performance; \
+		cd backend && bash scripts/test_local.sh performance; \
 	else \
 		docker-compose exec backend pytest -m "slow"; \
+	fi
+
+test-e2e: ## 🎯 Run end-to-end tests
+	@echo "$(BLUE)Running end-to-end tests...$(RESET)"
+	@if [ -f "backend/scripts/test_local.sh" ]; then \
+		cd backend && bash scripts/test_local.sh e2e; \
+	else \
+		docker-compose exec backend pytest -m "e2e"; \
+	fi
+
+test-fast: ## ⚡ Run fast test suite (unit tests only)
+	@echo "$(BLUE)Running fast test suite...$(RESET)"
+	@if [ -f "backend/scripts/test_local.sh" ]; then \
+		cd backend && bash scripts/test_local.sh fast; \
+	else \
+		docker-compose exec backend pytest -m "unit"; \
 	fi
 
 test-coverage: ## 📊 Generate test coverage report
@@ -91,8 +107,8 @@ test-coverage: ## 📊 Generate test coverage report
 
 load-test: ## 🚛 Run load tests
 	@echo "$(BLUE)Running load tests...$(RESET)"
-	@if [ -f "backend/scripts/load_test.sh" ]; then \
-		backend/scripts/load_test.sh; \
+	@if [ -f "backend/scripts/test_local.sh" ]; then \
+		cd backend && bash scripts/test_local.sh load; \
 	else \
 		echo "$(YELLOW)Load test script not found$(RESET)"; \
 	fi
@@ -119,6 +135,11 @@ lint: ## 🔍 Run all linters
 lint-fix: ## 🔧 Fix linting issues automatically
 	@echo "$(BLUE)Fixing linting issues...$(RESET)"
 	$(MAKE) format
+
+security: ## 🔒 Run security scan
+	@echo "$(BLUE)Running security scan...$(RESET)"
+	cd backend && bandit -r . -f json -o test-reports/security.json || true
+	@echo "$(GREEN)Security scan complete!$(RESET)"
 
 ##@ 💾 Database
 db: ## 🐘 Connect to main database

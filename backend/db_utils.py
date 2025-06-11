@@ -1,11 +1,9 @@
-import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from db import SessionLocal
 from models.question import Question
 from models.quiz import Quiz
 from models.result import Result
-from models.user import User
 
 
 def get_db():
@@ -75,12 +73,15 @@ def get_quiz_with_questions(db: Session, quiz_id: int):
 
 
 def record_quiz_result(
-    db: Session, quiz_id: int, score: int, total: int, answers: list, user_id: int = None
+    db: Session,
+    quiz_id: int,
+    score: int,
+    total: int,
+    answers: list,
+    user_id: int = None,
 ):
     """Record a quiz result in the database."""
-    result = Result(
-        quiz_id=quiz_id, user_id=user_id, answers=answers, score=score
-    )
+    result = Result(quiz_id=quiz_id, user_id=user_id, answers=answers, score=score)
     db.add(result)
     db.commit()
     db.refresh(result)
