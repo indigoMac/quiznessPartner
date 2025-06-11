@@ -27,6 +27,7 @@ sqlalchemy-utils==0.41.1
 
 # Load testing
 locust==2.17.0
+numpy>=1.24.0
 
 # API testing
 httpx==0.25.2
