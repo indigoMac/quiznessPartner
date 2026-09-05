@@ -14,7 +14,7 @@ interface FileUploadProps {
 const FileUpload: FC<FileUploadProps> = ({
   onFileSelect,
   label = "Upload file",
-  accept = ".pdf,.txt,.doc,.docx",
+  accept = ".pdf,.txt",
   error,
   maxSize = 10, // Default max size 10MB
   id,

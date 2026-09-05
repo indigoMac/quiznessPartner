@@ -1,13 +1,19 @@
 import json
+import logging
 import os
 import tempfile
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import fitz  # PyMuPDF
 import openai
 
-# Get OpenAI API key from environment variables
+logger = logging.getLogger(__name__)
+
 openai.api_key = os.getenv("OPENAI_API_KEY", "")
+
+
+class QuizGenerationError(Exception):
+    """Raised when quiz generation fails and the caller should surface the error."""
 
 
 def extract_text_from_pdf(pdf_file):
@@ -23,14 +29,13 @@ def extract_text_from_pdf(pdf_file):
             text += page.get_text()
         return text
     finally:
-        os.unlink(temp_file_path)  # Delete the temporary file
+        os.unlink(temp_file_path)
 
 
 def split_text(
     text: str, chunk_size: int = 3000, chunk_overlap: int = 200
 ) -> List[str]:
     """Split text into manageable chunks for processing."""
-    # Simple text splitter
     chunks = []
     current_chunk = ""
     sentences = text.split(". ")
@@ -49,14 +54,18 @@ def split_text(
 
 
 def generate_quiz_from_text(
-    text: str, topic: str = None, num_questions: int = 5
+    text: str, topic: Optional[str] = None, num_questions: int = 5
 ) -> List[Dict[str, Any]]:
-    """Generate a quiz from text using OpenAI."""
+    """Generate a quiz from text using OpenAI.
+
+    Raises QuizGenerationError when generation fails so callers can show
+    the failure instead of substituting dummy questions.
+    """
+    if not text or not text.strip():
+        raise QuizGenerationError("No text was provided to generate a quiz from.")
 
     if len(text) > 4000:
-        # If text is too long, take a relevant portion
         chunks = split_text(text)
-        # For simplicity, just use the first chunk
         text = chunks[0]
 
     topic_str = (
@@ -93,69 +102,47 @@ def generate_quiz_from_text(
             temperature=0.7,
         )
         result = response.choices[0].message.content.strip()
+    except Exception as exc:
+        logger.exception("OpenAI quiz generation failed")
+        raise QuizGenerationError(
+            "Quiz generation failed. Please try again."
+        ) from exc
 
-        # Clean up the result to ensure it's valid JSON
-        # Sometimes the model returns markdown-formatted JSON
-        if result.startswith("```json"):
-            result = result.replace("```json", "", 1)
-        if result.endswith("```"):
-            result = result.replace("```", "", 1)
+    if result.startswith("```json"):
+        result = result.replace("```json", "", 1)
+    if result.endswith("```"):
+        result = result.replace("```", "", 1)
+    result = result.strip()
 
-        result = result.strip()
+    try:
+        questions = json.loads(result)
+    except json.JSONDecodeError as exc:
+        logger.error("Quiz generation returned invalid JSON: %s", result)
+        raise QuizGenerationError(
+            "Quiz generation returned invalid data. Please try again."
+        ) from exc
 
-        try:
-            questions = json.loads(result)
+    if not isinstance(questions, list) or not questions:
+        raise QuizGenerationError(
+            "Quiz generation returned no questions. Try different content."
+        )
 
-            # Validate the structure of each question
-            for q in questions:
-                if (
-                    "question" not in q
-                    or "options" not in q
-                    or "correct_answer" not in q
-                ):
-                    raise ValueError("Invalid question structure")
-                if not isinstance(q["options"], list) or len(q["options"]) < 2:
-                    raise ValueError("Options must be a list with at least 2 items")
-                if not isinstance(q["correct_answer"], int):
-                    q["correct_answer"] = int(q["correct_answer"])
+    for q in questions:
+        if "question" not in q or "options" not in q or "correct_answer" not in q:
+            raise QuizGenerationError(
+                "Quiz generation returned an invalid question. Please try again."
+            )
+        if not isinstance(q["options"], list) or len(q["options"]) < 2:
+            raise QuizGenerationError(
+                "Quiz generation returned invalid answer options. Please try again."
+            )
+        if not isinstance(q["correct_answer"], int):
+            try:
+                q["correct_answer"] = int(q["correct_answer"])
+            except (TypeError, ValueError) as exc:
+                raise QuizGenerationError(
+                    "Quiz generation returned an invalid correct answer. "
+                    "Please try again."
+                ) from exc
 
-            return questions
-
-        except json.JSONDecodeError as e:
-            print(f"JSON parse error: {e}")
-            print(f"Received text: {result}")
-            # Return fallback questions
-            return get_fallback_questions(topic)
-
-    except Exception as e:
-        print(f"Error generating quiz: {e}")
-        # Return a simple default quiz if there's an error
-        return get_fallback_questions(topic)
-
-
-def get_fallback_questions(topic: str = None) -> List[Dict[str, Any]]:
-    """Generate fallback questions if the AI fails"""
-    topic_text = topic if topic else "this subject"
-
-    return [
-        {
-            "question": f"What is the main focus of {topic_text}?",
-            "options": [
-                "Understanding concepts",
-                "Memorizing facts",
-                "Applying knowledge",
-                "All of the above",
-            ],
-            "correct_answer": 3,
-        },
-        {
-            "question": "Which learning method is generally most effective?",
-            "options": [
-                "Reading without taking notes",
-                "Passive listening",
-                "Active recall and practice",
-                "Memorization without understanding",
-            ],
-            "correct_answer": 2,
-        },
-    ]
+    return questions

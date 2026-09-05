@@ -264,12 +264,9 @@ def e2e_test_scenario(client, db_session):
     teacher = UserFactory.create(db_session, email="teacher@test.com")
     students = UserFactory.create_batch(3, db_session)
 
-    # Create quizzes with varying difficulties
     quizzes = []
-    for difficulty in ["easy", "medium", "hard"]:
-        quiz = QuizFactory.create(
-            db_session, user=teacher, difficulty=difficulty, published=True
-        )
+    for topic in ["easy", "medium", "hard"]:
+        quiz = QuizFactory.create(db_session, user=teacher, topic=topic)
         QuestionFactory.create_batch(5, db_session, quiz=quiz)
         quizzes.append(quiz)
 

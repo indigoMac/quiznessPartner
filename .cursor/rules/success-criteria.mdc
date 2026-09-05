@@ -1,0 +1,16 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+Zero Duplication: No duplicate code or files exist in the codebase
+Single Implementation: Each feature has exactly one implementation
+Complete Template System: All HTML is generated via the template system
+No Fallbacks: No fallback systems that hide or mask errors
+Transparent Errors: All errors are properly displayed to users
+External Assets: All CSS and JavaScript is in external files
+Component Architecture: UI is built from reusable, modular components
+Consistent Standards: Implementation follows professional production grade standards
+Full Functionality: All features work correctly through template UI
+Complete Documentation: Implementation details are properly documented
+Testing: Proper tests are devised for project development

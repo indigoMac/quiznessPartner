@@ -4,14 +4,24 @@ import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import Dashboard from "../Dashboard";
 
-// Mock the auth context
 vi.mock("../../context/AuthContext", () => ({
   useAuth: () => ({
-    user: { email: "test@example.com" },
+    user: { id: 1, email: "test@example.com" },
   }),
 }));
 
-// Create a wrapper with necessary providers
+vi.mock("../../hooks/useQuiz", () => ({
+  useMyQuizzes: () => ({
+    data: {
+      quizzes: [],
+      total_quizzes: 0,
+      completed: 0,
+    },
+    isLoading: false,
+    error: null,
+  }),
+}));
+
 const queryClient = new QueryClient();
 const wrapper = ({ children }: { children: React.ReactNode }) => (
   <QueryClientProvider client={queryClient}>

@@ -1,8 +1,10 @@
-// import { useAuth } from "../context/AuthContext";
+import { Link } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import CreateQuiz from "../components/CreateQuiz";
+import Button from "../components/Button";
 
 export default function HomePage() {
-  // const { user } = useAuth();
+  const { user, isLoading } = useAuth();
 
   return (
     <div>
@@ -15,7 +17,34 @@ export default function HomePage() {
         </p>
       </div>
 
-      <CreateQuiz />
+      {isLoading ? (
+        <div className="flex justify-center py-12">
+          <div
+            data-testid="loading-spinner"
+            className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"
+          ></div>
+        </div>
+      ) : user ? (
+        <CreateQuiz />
+      ) : (
+        <div className="max-w-xl mx-auto bg-white dark:bg-gray-800 rounded-lg shadow-md p-8 text-center">
+          <h2 className="text-2xl font-semibold mb-3">Sign in to create quizzes</h2>
+          <p className="text-gray-600 dark:text-gray-300 mb-6">
+            Create an account to generate quizzes from PDFs or text, save them,
+            and track your results.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <Link to="/register">
+              <Button className="w-full sm:w-auto">Create an account</Button>
+            </Link>
+            <Link to="/login">
+              <Button variant="secondary" className="w-full sm:w-auto">
+                Log in
+              </Button>
+            </Link>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -15,8 +15,8 @@ import os
 from unittest.mock import patch, MagicMock
 
 # Test actual functions that exist
-from ai_utils import split_text, get_fallback_questions, generate_quiz_from_text
-from db_utils import create_quiz, get_quiz, add_questions_to_quiz
+from ai_utils import QuizGenerationError, generate_quiz_from_text, split_text
+from db_utils import add_questions_to_quiz, create_quiz, get_quiz
 
 pytestmark = pytest.mark.slow
 
@@ -43,21 +43,19 @@ def test_text_splitting_performance():
     assert all(len(chunk) <= 3000 for chunk in chunks)  # Respect chunk size
 
 
-def test_fallback_questions_performance():
-    """Test performance of fallback question generation"""
-    start_time = time.time()
-    
-    # Generate fallback questions multiple times
-    for i in range(100):
-        questions = get_fallback_questions(f"topic_{i}")
-        assert len(questions) == 2
-        assert all("question" in q and "options" in q and "correct_answer" in q for q in questions)
-    
-    end_time = time.time()
-    
-    generation_time = end_time - start_time
-    # Should generate 100 sets of fallback questions quickly
-    assert generation_time < 0.1, f"Generating 100 fallback question sets took {generation_time:.3f}s"
+def test_quiz_generation_error_path_performance():
+    """Failed generation should raise quickly instead of returning dummy questions."""
+    with patch("ai_utils.openai.chat.completions.create") as mock_openai:
+        mock_openai.side_effect = Exception("API Error")
+        start_time = time.time()
+        for _ in range(50):
+            with pytest.raises(QuizGenerationError):
+                generate_quiz_from_text("Some source text")
+        generation_time = time.time() - start_time
+
+    assert generation_time < 0.2, (
+        f"Raising generation errors 50 times took {generation_time:.3f}s"
+    )
 
 
 def test_database_operations_performance(db_session):

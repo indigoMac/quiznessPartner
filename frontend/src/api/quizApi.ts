@@ -1,14 +1,15 @@
 import axios from "axios";
+import API_BASE_URL from "./config";
 import type {
   QuizResponse,
   AnswerSubmission,
   QuizResult,
   GenerateQuizForm,
   UploadDocumentForm,
+  QuizListResponse,
 } from "../types/api";
 
-// Base API URL from environment variables
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_URL = API_BASE_URL;
 
 // Create an axios instance with base URL
 const api = axios.create({
@@ -83,5 +84,10 @@ export const checkHealth = async (): Promise<{
   const response = await api.get<{ status: string; version: string }>(
     "/health"
   );
+  return response.data;
+};
+
+export const listMyQuizzes = async (): Promise<QuizListResponse> => {
+  const response = await api.get<QuizListResponse>("/api/v1/quizzes");
   return response.data;
 };

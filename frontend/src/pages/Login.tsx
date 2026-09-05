@@ -1,6 +1,6 @@
 import type { ChangeEvent } from "react";
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import Input from "../components/Input";
 import Button from "../components/Button";
@@ -11,7 +11,10 @@ export default function Login() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { login, user } = useAuth();
+  const successMessage =
+    (location.state as { message?: string } | null)?.message ?? "";
 
   // Redirect if already logged in
   useEffect(() => {
@@ -49,6 +52,13 @@ export default function Login() {
           </h2>
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+          {successMessage && (
+            <div className="rounded-md bg-green-50 dark:bg-green-900/30 p-4">
+              <div className="text-sm text-green-700 dark:text-green-400">
+                {successMessage}
+              </div>
+            </div>
+          )}
           {error && (
             <div className="rounded-md bg-red-50 dark:bg-red-900/30 p-4">
               <div className="text-sm text-red-700 dark:text-red-400">

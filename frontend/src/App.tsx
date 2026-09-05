@@ -10,6 +10,7 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import HomePage from "./pages/HomePage";
 import Dashboard from "./pages/Dashboard";
+import Profile from "./pages/Profile";
 import QuizPage from "./pages/QuizPage";
 import CreateQuiz from "./components/CreateQuiz";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -58,7 +59,7 @@ function App() {
               >
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/quiz/new" element={<CreateQuiz />} />
-                <Route path="/profile" element={<div>Profile (TODO)</div>} />
+                <Route path="/profile" element={<Profile />} />
               </Route>
             </Route>
           </Routes>

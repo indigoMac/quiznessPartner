@@ -289,35 +289,29 @@ class TestErrorHandlingWorkflow:
         assert "not found" in response.json()["detail"].lower()
 
     def test_unauthenticated_access(self, client):
-        """Test that protected endpoints require authentication"""
-        # Try to access protected endpoints without authentication
-        protected_endpoints = [
-            ("/api/v1/generate-quiz", "post", {"content": "test", "topic": "test"}),
-            ("/api/v1/upload-document", "post", {}),
-            ("/api/v1/auth/me", "get", {}),
-        ]
+        """Protected endpoints reject missing credentials."""
+        generate = client.post(
+            "/api/v1/generate-quiz", json={"content": "test", "topic": "test"}
+        )
+        assert generate.status_code == 401
 
-        for endpoint, method, data in protected_endpoints:
-            if method == "post":
-                if endpoint == "/api/v1/upload-document":
-                    response = client.post(
-                        endpoint, files={"file": ("test.txt", b"content", "text/plain")}
-                    )
-                else:
-                    response = client.post(endpoint, json=data)
-            else:
-                response = client.get(endpoint)
+        upload = client.post(
+            "/api/v1/upload-document",
+            files={"file": ("test.txt", b"content", "text/plain")},
+        )
+        assert upload.status_code == 401
 
-            # These endpoints use get_optional_user, so they might not require auth
-            # Let's test the actual behavior
-            if response.status_code not in [200, 401]:
-                print(f"Unexpected status for {endpoint}: {response.status_code}")
+        me = client.get("/api/v1/auth/me")
+        assert me.status_code == 401
+
+        quizzes = client.get("/api/v1/quizzes")
+        assert quizzes.status_code == 401
 
 
 class TestPerformanceWorkflow:
     """Test performance aspects of workflows"""
 
-    @patch("ai_utils.generate_quiz_from_text")
+    @patch("main.generate_quiz_from_text")
     def test_quiz_creation_performance(self, mock_generate_quiz, authenticated_client):
         """Test that quiz creation completes within reasonable time"""
         client, headers = authenticated_client
@@ -354,7 +348,7 @@ class TestPerformanceWorkflow:
         client, headers = authenticated_client
 
         # For now, just test that multiple sequential submissions work
-        with patch("ai_utils.generate_quiz_from_text") as mock_generate:
+        with patch("main.generate_quiz_from_text") as mock_generate:
             mock_generate.return_value = [
                 {
                     "question": "Test question",
@@ -420,7 +414,7 @@ class TestDataIntegrityWorkflow:
             retrieved_quiz = response.json()
 
             # Verify core data hasn't changed
-            assert retrieved_quiz["id"] == quiz_id
+            assert retrieved_quiz["id"] == int(quiz_id)
             assert retrieved_quiz["topic"] == "Data Persistence Quiz"
             assert len(retrieved_quiz["questions"]) == len(original_quiz_data)
 

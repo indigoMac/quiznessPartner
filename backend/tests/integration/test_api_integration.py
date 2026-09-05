@@ -455,3 +455,99 @@ def test_protected_route_with_token(setup_db):
     assert response.status_code == 200
     data = response.json()
     assert data["email"] == "meuser@example.com"
+
+
+def test_generate_quiz_requires_auth(setup_db):
+    response = client.post(
+        "/api/v1/generate-quiz",
+        json={"content": "Test content", "topic": "Geography", "num_questions": 1},
+    )
+    assert response.status_code == 401
+
+
+def test_list_quizzes_requires_auth(setup_db):
+    response = client.get("/api/v1/quizzes")
+    assert response.status_code == 401
+
+
+@patch("main.generate_quiz_from_text")
+def test_generate_quiz_ai_failure_returns_bad_gateway(mock_generate_quiz, auth_token):
+    from ai_utils import QuizGenerationError
+
+    mock_generate_quiz.side_effect = QuizGenerationError(
+        "Quiz generation failed. Please try again."
+    )
+    response = client.post(
+        "/api/v1/generate-quiz",
+        headers=auth_token,
+        json={"content": "Test content", "topic": "Geography", "num_questions": 1},
+    )
+    assert response.status_code == 502
+    assert "Quiz generation failed" in response.json()["detail"]
+
+
+@patch("main.generate_quiz_from_text")
+def test_list_quizzes_returns_current_user_quizzes(mock_generate_quiz, auth_token):
+    mock_generate_quiz.return_value = [
+        {
+            "question": "What is the capital of France?",
+            "options": ["Berlin", "Paris", "London", "Madrid"],
+            "correct_answer": 1,
+        }
+    ]
+
+    create_response = client.post(
+        "/api/v1/generate-quiz",
+        headers=auth_token,
+        json={"content": "Test content", "topic": "Geography", "num_questions": 1},
+    )
+    assert create_response.status_code == 200
+    created = create_response.json()
+
+    response = client.get("/api/v1/quizzes", headers=auth_token)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_quizzes"] == 1
+    assert data["completed"] == 0
+    assert data["quizzes"][0]["id"] == int(created["id"])
+    assert data["quizzes"][0]["title"] == "Quiz on Geography"
+    assert data["quizzes"][0]["question_count"] == 1
+
+
+@patch("main.generate_quiz_from_text")
+def test_submit_answer_records_authenticated_user(mock_generate_quiz, auth_token):
+    mock_generate_quiz.return_value = [
+        {
+            "question": "What is 2+2?",
+            "options": ["3", "4", "5", "6"],
+            "correct_answer": 1,
+        }
+    ]
+    created = client.post(
+        "/api/v1/generate-quiz",
+        headers=auth_token,
+        json={"content": "Math", "topic": "Math", "num_questions": 1},
+    ).json()
+
+    response = client.post(
+        "/api/v1/submit-answer",
+        headers=auth_token,
+        json={"quiz_id": int(created["id"]), "answers": [1]},
+    )
+    assert response.status_code == 200
+
+    listed = client.get("/api/v1/quizzes", headers=auth_token).json()
+    assert listed["completed"] == 1
+    assert listed["quizzes"][0]["attempt_count"] == 1
+    assert listed["quizzes"][0]["best_score"] == 1
+
+
+def test_upload_document_rejects_unsupported_type(auth_token):
+    response = client.post(
+        "/api/v1/upload-document",
+        headers=auth_token,
+        files={"file": ("notes.docx", io.BytesIO(b"not a pdf"), "application/msword")},
+        data={"topic": "Geography", "num_questions": "3"},
+    )
+    assert response.status_code == 400
+    assert "Only PDF and TXT" in response.json()["detail"]

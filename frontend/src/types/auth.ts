@@ -1,6 +1,8 @@
 export interface User {
-  id: string;
+  id: number;
   email: string;
+  is_active?: boolean;
+  created_at?: string;
 }
 
 export interface LoginCredentials {
@@ -12,6 +14,6 @@ export interface AuthContextType {
   user: User | null;
   token: string | null;
   isLoading: boolean;
-  login: (credentials: LoginCredentials) => Promise<void>;
+  login: (credentials: LoginCredentials) => Promise<User>;
   logout: () => void;
 }

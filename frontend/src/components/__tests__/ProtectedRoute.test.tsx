@@ -53,7 +53,7 @@ describe("ProtectedRoute", () => {
   });
 
   it("should render outlet if user is authenticated", () => {
-    const mockUser: User = { id: "1", email: "test@test.com" };
+    const mockUser: User = { id: 1, email: "test@test.com" };
     mockUseAuth.mockReturnValue({
       user: mockUser,
       isLoading: false,

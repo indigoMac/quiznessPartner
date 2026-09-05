@@ -43,3 +43,19 @@ export interface GenerateQuizForm {
   topic?: string;
   num_questions?: number;
 }
+
+export interface QuizSummary {
+  id: number;
+  title: string;
+  topic?: string | null;
+  created_at?: string | null;
+  question_count: number;
+  attempt_count: number;
+  best_score: number | null;
+}
+
+export interface QuizListResponse {
+  quizzes: QuizSummary[];
+  total_quizzes: number;
+  completed: number;
+}

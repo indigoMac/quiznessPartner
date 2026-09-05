@@ -58,6 +58,25 @@ jobs:
           cd backend
           make test
 
+  frontend-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies and run tests
+        working-directory: frontend
+        run: |
+          npm ci
+          npm test
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
@@ -194,7 +213,7 @@ jobs:
 
   deploy-staging:
     runs-on: ubuntu-latest
-    needs: [backend-tests, lint-and-format, security-scan]
+    needs: [backend-tests, frontend-tests, lint-and-format, security-scan]
     if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
 
     environment: staging
@@ -216,7 +235,7 @@ jobs:
 
   deploy-production:
     runs-on: ubuntu-latest
-    needs: [backend-tests, lint-and-format, security-scan]
+    needs: [backend-tests, frontend-tests, lint-and-format, security-scan]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     environment: production

@@ -179,7 +179,7 @@ export default function CreateQuiz() {
                 <div>
                   <FileUpload
                     onFileSelect={handleFileSelect}
-                    accept=".txt,.pdf,.doc,.docx"
+                    accept=".pdf,.txt"
                   />
                 </div>
               ) : (

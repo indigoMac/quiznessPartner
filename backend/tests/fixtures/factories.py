@@ -68,9 +68,6 @@ class QuizFactory(factory.alchemy.SQLAlchemyModelFactory):
 
     title = Faker("sentence", nb_words=4)
     topic = Faker("word")
-    difficulty = factory.Iterator(["easy", "medium", "hard"])
-    time_limit = factory.LazyFunction(lambda: random.randint(10, 60))
-    published = True
     user = SubFactory(UserFactory)
 
     @classmethod
@@ -94,14 +91,6 @@ class QuizFactory(factory.alchemy.SQLAlchemyModelFactory):
             quizzes.append(quiz)
         return quizzes
 
-    class Params:
-        # Traits for different quiz types
-        easy = factory.Trait(difficulty="easy", time_limit=15)
-        medium = factory.Trait(difficulty="medium", time_limit=30)
-        hard = factory.Trait(difficulty="hard", time_limit=45)
-        unpublished = factory.Trait(published=False)
-        with_many_questions = factory.Trait(time_limit=60)
-
 
 class QuestionFactory(factory.alchemy.SQLAlchemyModelFactory):
     """Factory for creating test questions."""
@@ -120,7 +109,6 @@ class QuestionFactory(factory.alchemy.SQLAlchemyModelFactory):
         ]
     )
     correct_answer = factory.LazyFunction(lambda: random.randint(0, 3))
-    order = factory.Sequence(lambda n: n)
     quiz = SubFactory(QuizFactory)
 
     @classmethod
@@ -139,9 +127,7 @@ class QuestionFactory(factory.alchemy.SQLAlchemyModelFactory):
     def create_batch(cls, size, session, **kwargs):
         """Create multiple questions."""
         questions = []
-        for i in range(size):
-            if "order" not in kwargs:
-                kwargs["order"] = i
+        for _ in range(size):
             question = cls.create(session, **kwargs)
             questions.append(question)
         return questions
@@ -248,7 +234,6 @@ class TestDataSets:
                 num_questions=10,
                 topic=subject,
                 user=teacher,
-                difficulty="medium",
             )
             quizzes.append((quiz, questions))
 
@@ -266,7 +251,7 @@ class TestDataSets:
 
         for module in modules:
             quiz, questions = create_quiz_with_questions(
-                session, num_questions=8, topic=module, user=trainer, difficulty="easy"
+                session, num_questions=8, topic=module, user=trainer
             )
 
             # Create results for employees

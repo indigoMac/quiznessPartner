@@ -13,6 +13,7 @@ vi.mock("../../context/AuthContext", () => ({
 // Mock react-router-dom
 vi.mock("react-router-dom", () => ({
   useNavigate: vi.fn(),
+  useLocation: () => ({ state: null }),
   BrowserRouter: ({ children }: { children: React.ReactNode }) => (
     <div>{children}</div>
   ),
@@ -21,7 +22,7 @@ vi.mock("react-router-dom", () => ({
 describe("Login", () => {
   const mockNavigate = vi.fn();
   const mockLogin = vi.fn();
-  const mockUser: User = { id: "1", email: "test@example.com" };
+  const mockUser: User = { id: 1, email: "test@example.com" };
 
   beforeEach(() => {
     vi.clearAllMocks();

@@ -5,6 +5,7 @@ import {
   getQuiz,
   submitAnswers,
   checkHealth,
+  listMyQuizzes,
 } from "../api/quizApi";
 import type {
   GenerateQuizForm,
@@ -47,5 +48,12 @@ export const useGetQuiz = (quizId: string | null) => {
 export const useSubmitAnswers = () => {
   return useMutation({
     mutationFn: (data: AnswerSubmission) => submitAnswers(data),
+  });
+};
+
+export const useMyQuizzes = () => {
+  return useQuery({
+    queryKey: ["my-quizzes"],
+    queryFn: listMyQuizzes,
   });
 };

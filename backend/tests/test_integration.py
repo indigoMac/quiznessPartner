@@ -77,7 +77,8 @@ class TestIntegrationWorkflow:
         # Step 4: Submit answers
         response = client.post(
             "/api/v1/submit-answer",
-            json={"quiz_id": int(quiz_id), "answers": [1, 1]},  # Both correct answers
+            headers=auth_headers,
+            json={"quiz_id": int(quiz_id), "answers": [1, 1]},
         )
 
         assert response.status_code == 200
@@ -128,32 +129,18 @@ class TestIntegrationWorkflow:
         assert quiz.user_id == sample_user.id
 
     def test_quiz_without_authentication(self, client: TestClient, db_session: Session):
-        """Test quiz creation without authentication (anonymous users)."""
+        """Quiz creation requires a logged-in user."""
+        response = client.post(
+            "/api/v1/generate-quiz",
+            json={
+                "content": "Anonymous content",
+                "topic": "Anonymous Topic",
+                "num_questions": 1,
+            },
+        )
 
-        with patch("main.generate_quiz_from_text") as mock_generate:
-            mock_generate.return_value = [
-                {
-                    "question": "Anonymous question?",
-                    "options": ["A", "B", "C", "D"],
-                    "correct_answer": 0,
-                }
-            ]
-
-            response = client.post(
-                "/api/v1/generate-quiz",
-                json={
-                    "content": "Anonymous content",
-                    "topic": "Anonymous Topic",
-                    "num_questions": 1,
-                },
-            )
-
-        assert response.status_code == 200
-        quiz_data = response.json()
-
-        # Verify quiz is not associated with any user
-        quiz = db_session.query(Quiz).filter(Quiz.id == int(quiz_data["id"])).first()
-        assert quiz.user_id is None
+        assert response.status_code == 401
+        assert db_session.query(Quiz).count() == 0
 
     def test_database_persistence(
         self, client: TestClient, db_session: Session, auth_headers: dict
