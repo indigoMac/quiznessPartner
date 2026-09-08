@@ -8,9 +8,17 @@ interface QuizResultsProps {
   };
   onNewQuiz: () => void;
   onRetry: () => void;
+  onPracticeAgain?: () => void;
+  isPracticing?: boolean;
 }
 
-const QuizResults: FC<QuizResultsProps> = ({ result, onNewQuiz, onRetry }) => {
+const QuizResults: FC<QuizResultsProps> = ({
+  result,
+  onNewQuiz,
+  onRetry,
+  onPracticeAgain,
+  isPracticing = false,
+}) => {
   const percentage = Math.round((result.score / result.total) * 100);
 
   const getScoreMessage = () => {
@@ -65,8 +73,17 @@ const QuizResults: FC<QuizResultsProps> = ({ result, onNewQuiz, onRetry }) => {
         You scored {result.score} out of {result.total} questions correctly.
       </p>
 
-      <div className="flex gap-4">
+      <div className="flex flex-wrap justify-center gap-4">
         <Button onClick={onRetry}>Try Again</Button>
+        {onPracticeAgain && (
+          <Button
+            variant="secondary"
+            onClick={onPracticeAgain}
+            isLoading={isPracticing}
+          >
+            New quiz on this topic
+          </Button>
+        )}
         <Button variant="outline" onClick={onNewQuiz}>
           Create New Quiz
         </Button>

@@ -385,7 +385,10 @@ def _chat_completion(prompt: str) -> str:
 
 
 def generate_quiz_from_text(
-    text: str, topic: Optional[str] = None, num_questions: int = 5
+    text: str,
+    topic: Optional[str] = None,
+    num_questions: int = 5,
+    existing_questions: Optional[List[Dict[str, Any]]] = None,
 ) -> GeneratedQuiz:
     """Generate a quiz from text using the configured LLM provider.
 
@@ -401,6 +404,7 @@ def generate_quiz_from_text(
         raise QuizGenerationError("No text was provided to generate a quiz from.")
 
     counts = _question_counts(num_questions, len(chunks))
+    prior = _dedupe_questions(existing_questions or [])
     collected: List[Dict[str, Any]] = []
     title: Optional[str] = None
     inferred_topic: Optional[str] = topic
@@ -415,7 +419,7 @@ def generate_quiz_from_text(
                 topic,
                 count,
                 include_metadata,
-                existing_questions=collected,
+                existing_questions=prior + collected,
             )
         except QuizGenerationError:
             if not collected:
@@ -428,7 +432,14 @@ def generate_quiz_from_text(
             inferred_topic = part.topic
         collected.extend(part.questions)
 
-    questions = _dedupe_questions(collected)[:num_questions]
+    prior_keys = {
+        _normalize_question_text(item.get("question", "")) for item in prior
+    }
+    questions = [
+        question
+        for question in _dedupe_questions(collected)
+        if _normalize_question_text(question.get("question", "")) not in prior_keys
+    ][:num_questions]
     if not questions:
         raise QuizGenerationError(
             "Quiz generation returned no questions. Try different content."
@@ -439,3 +450,10 @@ def generate_quiz_from_text(
         topic=_clean_label(inferred_topic, 60),
         questions=questions,
     )
+
+
+def source_text_for_storage(text: str) -> Optional[str]:
+    """Keep the same representative chunks used for generation."""
+    chunks = select_source_chunks(text)
+    stored = "\n\n".join(chunks).strip()
+    return stored or None

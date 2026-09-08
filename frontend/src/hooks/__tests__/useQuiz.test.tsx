@@ -20,6 +20,7 @@ vi.mock("../../api/quizApi", () => ({
   submitAnswers: vi.fn(),
   checkHealth: vi.fn(),
   listMyQuizzes: (...args: unknown[]) => mocks.listMyQuizzes(...args),
+  practiceStudyTopic: vi.fn(),
 }));
 
 import { useMyQuizzes } from "../useQuiz";

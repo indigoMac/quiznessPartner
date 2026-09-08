@@ -8,6 +8,7 @@ import type {
   GenerateQuizFromUrlForm,
   UploadDocumentForm,
   QuizListResponse,
+  PracticeStudyTopicForm,
 } from "../types/api";
 
 const api = axios.create({
@@ -110,4 +111,14 @@ export const listMyQuizzes = async (): Promise<QuizListResponse> => {
     throw new Error(detail);
   }
   return response.json();
+};
+
+export const practiceStudyTopic = async (
+  data: PracticeStudyTopicForm
+): Promise<QuizResponse> => {
+  const response = await api.post<QuizResponse>(
+    `/api/v1/study-topics/${data.study_topic_id}/practice`,
+    { num_questions: data.num_questions ?? 5 }
+  );
+  return response.data;
 };

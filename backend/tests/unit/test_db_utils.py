@@ -1,6 +1,12 @@
 """Unit tests for database helper functions."""
 
-from db_utils import create_quiz, list_user_quizzes, record_quiz_result
+from db_utils import (
+    create_quiz,
+    create_study_topic,
+    list_user_quizzes,
+    list_user_study_topics,
+    record_quiz_result,
+)
 from models.result import Result
 from tests.fixtures.factories import QuestionFactory, QuizFactory, UserFactory
 
@@ -33,6 +39,7 @@ class TestListUserQuizzes:
         assert quizzes[0]["question_count"] == 2
         assert quizzes[0]["attempt_count"] == 0
         assert quizzes[0]["best_score"] is None
+        assert quizzes[0]["study_topic_id"] is None
 
     def test_includes_attempt_stats_and_completed_count(self, db_session):
         user = UserFactory.create(db_session)
@@ -48,6 +55,43 @@ class TestListUserQuizzes:
         assert completed == 1
         assert quizzes[0]["attempt_count"] == 2
         assert quizzes[0]["best_score"] == 3
+
+
+class TestStudyTopics:
+    def test_groups_quizzes_under_a_study_topic(self, db_session):
+        user = UserFactory.create(db_session)
+        topic = create_study_topic(
+            db_session,
+            user_id=user.id,
+            title="Geography",
+            topic="Geography",
+            source_text="France is in Europe.",
+        )
+        first = create_quiz(
+            db_session,
+            title="Capitals 1",
+            topic="Geography",
+            user_id=user.id,
+            study_topic_id=topic.id,
+        )
+        second = create_quiz(
+            db_session,
+            title="Capitals 2",
+            topic="Geography",
+            user_id=user.id,
+            study_topic_id=topic.id,
+        )
+        QuestionFactory.create_batch(2, db_session, quiz=first)
+        QuestionFactory.create_batch(2, db_session, quiz=second)
+        db_session.commit()
+
+        grouped = list_user_study_topics(db_session, user.id)
+
+        assert len(grouped) == 1
+        assert grouped[0]["id"] == topic.id
+        assert grouped[0]["quiz_count"] == 2
+        assert grouped[0]["can_practice"] is True
+        assert {quiz["id"] for quiz in grouped[0]["quizzes"]} == {first.id, second.id}
 
 
 class TestRecordQuizResult:

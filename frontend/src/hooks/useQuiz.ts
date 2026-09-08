@@ -8,12 +8,14 @@ import {
   submitAnswers,
   checkHealth,
   listMyQuizzes,
+  practiceStudyTopic,
 } from "../api/quizApi";
 import type {
   GenerateQuizForm,
   GenerateQuizFromUrlForm,
   UploadDocumentForm,
   AnswerSubmission,
+  PracticeStudyTopicForm,
 } from "../types/api";
 
 // Hook for checking API health
@@ -69,6 +71,16 @@ export const useSubmitAnswers = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: AnswerSubmission) => submitAnswers(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["my-quizzes"] });
+    },
+  });
+};
+
+export const usePracticeStudyTopic = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: PracticeStudyTopicForm) => practiceStudyTopic(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["my-quizzes"] });
     },

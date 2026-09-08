@@ -19,6 +19,10 @@ vi.mock("../../context/AuthContext", () => ({
 vi.mock("../../hooks/useQuiz", () => ({
   useGetQuiz: () => mockUseGetQuiz(),
   useSubmitAnswers: () => mockUseSubmitAnswers(),
+  usePracticeStudyTopic: () => ({
+    mutateAsync: vi.fn(),
+    isPending: false,
+  }),
 }));
 
 vi.mock("react-router-dom", () => ({

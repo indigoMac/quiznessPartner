@@ -95,6 +95,7 @@ class TestQuizModel:
         """Test quiz foreign key structure."""
         quiz = Quiz(title="Test", user_id=123)
         assert quiz.user_id == 123
+        assert quiz.study_topic_id is None
 
         # user_id can be None (nullable=True)
         quiz_no_user = Quiz(title="Test")

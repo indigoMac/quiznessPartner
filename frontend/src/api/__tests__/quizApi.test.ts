@@ -56,6 +56,7 @@ import {
   submitAnswers,
   checkHealth,
   listMyQuizzes,
+  practiceStudyTopic,
 } from "../quizApi";
 import API_BASE_URL from "../config";
 
@@ -139,6 +140,18 @@ describe("Quiz API", () => {
     const [url, payload] = postCall.mock.calls[0];
     expect(url).toBe("/api/v1/generate-quiz-from-url");
     expect(payload).toEqual(data);
+  });
+
+  it("practices a study topic", async () => {
+    const data = { study_topic_id: 7, num_questions: 5 };
+    await practiceStudyTopic(data);
+
+    const mockAxios = (await import("axios")).default;
+    const instance = mockAxios.create();
+    const postCall = instance.post as unknown as jest.Mock;
+    const [url, payload] = postCall.mock.calls[0];
+    expect(url).toBe("/api/v1/study-topics/7/practice");
+    expect(payload).toEqual({ num_questions: 5 });
   });
 
   it("uploads a document", async () => {

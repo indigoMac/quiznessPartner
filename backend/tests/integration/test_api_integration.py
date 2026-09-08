@@ -16,6 +16,7 @@ from models.base import Base
 from models.question import Question
 from models.quiz import Quiz
 from models.result import Result
+from models.study_topic import StudyTopic  # noqa: F401
 from models.user import User
 
 # Create a test database in memory
@@ -563,6 +564,70 @@ def test_generate_quiz_persists_generated_title(mock_generate_quiz, auth_token):
     listed = client.get("/api/v1/quizzes", headers=auth_token).json()
     assert listed["quizzes"][0]["title"] == "European Capitals"
     assert listed["quizzes"][0]["topic"] == "Geography"
+    assert listed["total_topics"] == 1
+    assert listed["study_topics"][0]["title"] == "Geography"
+    assert listed["study_topics"][0]["can_practice"] is True
+    assert data["study_topic_id"] == listed["study_topics"][0]["id"]
+
+
+@patch("main.generate_quiz_from_text")
+def test_practice_study_topic_creates_another_quiz(mock_generate_quiz, auth_token):
+    mock_generate_quiz.side_effect = [
+        GeneratedQuiz(
+            title="European Capitals",
+            topic="Geography",
+            questions=[
+                {
+                    "question": "What is the capital of France?",
+                    "options": ["Berlin", "Paris", "London", "Madrid"],
+                    "correct_answer": 1,
+                }
+            ],
+        ),
+        GeneratedQuiz(
+            title="European Capitals Practice",
+            topic="Geography",
+            questions=[
+                {
+                    "question": "What is the capital of Spain?",
+                    "options": ["Lisbon", "Madrid", "Rome", "Paris"],
+                    "correct_answer": 1,
+                }
+            ],
+        ),
+    ]
+
+    created = client.post(
+        "/api/v1/generate-quiz",
+        headers=auth_token,
+        json={"content": "Test content about European capitals.", "num_questions": 1},
+    ).json()
+
+    response = client.post(
+        f"/api/v1/study-topics/{created['study_topic_id']}/practice",
+        headers=auth_token,
+        json={"num_questions": 1},
+    )
+    assert response.status_code == 200
+    practiced = response.json()
+    assert practiced["id"] != created["id"]
+    assert practiced["study_topic_id"] == created["study_topic_id"]
+    assert practiced["title"] == "European Capitals Practice"
+
+    listed = client.get("/api/v1/quizzes", headers=auth_token).json()
+    assert listed["total_quizzes"] == 2
+    assert listed["total_topics"] == 1
+    assert listed["study_topics"][0]["quiz_count"] == 2
+    assert mock_generate_quiz.call_count == 2
+    existing = mock_generate_quiz.call_args.kwargs["existing_questions"]
+    assert existing[0]["question"] == "What is the capital of France?"
+
+
+def test_practice_study_topic_requires_auth(setup_db):
+    response = client.post(
+        "/api/v1/study-topics/1/practice", json={"num_questions": 1}
+    )
+    assert response.status_code == 401
 
 
 @patch("main.generate_quiz_from_text")

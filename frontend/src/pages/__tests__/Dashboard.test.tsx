@@ -14,11 +14,19 @@ vi.mock("../../hooks/useQuiz", () => ({
   useMyQuizzes: () => ({
     data: {
       quizzes: [],
+      study_topics: [],
       total_quizzes: 0,
       completed: 0,
+      total_topics: 0,
     },
     isLoading: false,
     error: null,
+  }),
+  usePracticeStudyTopic: () => ({
+    mutateAsync: vi.fn(),
+    isPending: false,
+    isError: false,
+    variables: undefined,
   }),
 }));
 

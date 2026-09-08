@@ -13,15 +13,20 @@ from ai_utils import (
     as_generated_quiz,
     extract_text_from_pdf,
     generate_quiz_from_text,
+    source_text_for_storage,
 )
 from auth import auth_router
 from auth.dependencies import get_current_active_user, get_optional_user
 from db_utils import (
     add_questions_to_quiz,
     create_quiz,
+    create_study_topic,
     get_db,
     get_quiz_with_questions,
+    get_study_topic_for_user,
+    list_study_topic_questions,
     list_user_quizzes,
+    list_user_study_topics,
     record_quiz_result,
 )
 from models.user import User
@@ -79,6 +84,10 @@ class UrlQuizRequest(BaseModel):
     num_questions: int = Field(default=5, ge=1, le=20)
 
 
+class PracticeRequest(BaseModel):
+    num_questions: int = Field(default=5, ge=1, le=20)
+
+
 class AnswerSubmission(BaseModel):
     quiz_id: int
     answers: List[int]
@@ -88,6 +97,7 @@ class QuizResponse(BaseModel):
     id: str
     title: str
     topic: Optional[str] = None
+    study_topic_id: Optional[int] = None
     questions: List[Dict[str, Any]]
 
 
@@ -106,12 +116,26 @@ class QuizSummary(BaseModel):
     question_count: int
     attempt_count: int
     best_score: Optional[int] = None
+    study_topic_id: Optional[int] = None
+
+
+class StudyTopicSummary(BaseModel):
+    id: Optional[int] = None
+    title: str
+    topic: Optional[str] = None
+    source_url: Optional[str] = None
+    can_practice: bool
+    quiz_count: int
+    completed: int
+    quizzes: List[QuizSummary]
 
 
 class QuizListResponse(BaseModel):
     quizzes: List[QuizSummary]
+    study_topics: List[StudyTopicSummary]
     total_quizzes: int
     completed: int
+    total_topics: int
 
 
 def _serialize_created_at(value) -> Optional[str]:
@@ -121,15 +145,42 @@ def _serialize_created_at(value) -> Optional[str]:
 
 
 def _persist_generated_quiz(
-    db: Session, generated, user_id: int
+    db: Session,
+    generated,
+    user_id: int,
+    source_text: Optional[str] = None,
+    source_url: Optional[str] = None,
+    study_topic_id: Optional[int] = None,
 ) -> QuizResponse:
-    quiz = create_quiz(db, generated.title, generated.topic, user_id)
+    if study_topic_id is not None:
+        study_topic = get_study_topic_for_user(db, study_topic_id, user_id)
+        if not study_topic:
+            raise HTTPException(status_code=404, detail="Study topic not found")
+    else:
+        title = generated.topic or generated.title
+        study_topic = create_study_topic(
+            db,
+            user_id=user_id,
+            title=title or "Study topic",
+            topic=generated.topic,
+            source_text=source_text_for_storage(source_text or ""),
+            source_url=source_url,
+        )
+
+    quiz = create_quiz(
+        db,
+        generated.title,
+        generated.topic,
+        user_id,
+        study_topic.id,
+    )
     add_questions_to_quiz(db, quiz.id, generated.questions)
     complete_quiz = get_quiz_with_questions(db, quiz.id)
     return QuizResponse(
         id=str(complete_quiz["id"]),
         title=complete_quiz["title"],
         topic=complete_quiz["topic"],
+        study_topic_id=complete_quiz.get("study_topic_id"),
         questions=complete_quiz["questions"],
     )
 
@@ -160,7 +211,12 @@ async def generate_quiz(
             ),
             request.topic,
         )
-        return _persist_generated_quiz(db, generated, current_user.id)
+        return _persist_generated_quiz(
+            db,
+            generated,
+            current_user.id,
+            source_text=request.content,
+        )
     except QuizGenerationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except HTTPException:
@@ -201,7 +257,12 @@ async def upload_document(
             generate_quiz_from_text(text, topic, num_questions),
             topic,
         )
-        return _persist_generated_quiz(db, generated, current_user.id)
+        return _persist_generated_quiz(
+            db,
+            generated,
+            current_user.id,
+            source_text=text,
+        )
     except QuizGenerationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except HTTPException:
@@ -224,7 +285,13 @@ async def generate_quiz_from_url(
             generate_quiz_from_text(text, topic, request.num_questions),
             topic,
         )
-        return _persist_generated_quiz(db, generated, current_user.id)
+        return _persist_generated_quiz(
+            db,
+            generated,
+            current_user.id,
+            source_text=text,
+            source_url=request.url,
+        )
     except UrlFetchError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except QuizGenerationError as exc:
@@ -240,8 +307,9 @@ async def list_quizzes(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """List quizzes created by the current user."""
+    """List quizzes created by the current user, grouped into study topics."""
     quizzes, total_quizzes, completed = list_user_quizzes(db, current_user.id)
+    study_topics = list_user_study_topics(db, current_user.id)
     return QuizListResponse(
         quizzes=[
             QuizSummary(
@@ -252,12 +320,91 @@ async def list_quizzes(
                 question_count=item["question_count"],
                 attempt_count=item["attempt_count"],
                 best_score=item["best_score"],
+                study_topic_id=item.get("study_topic_id"),
             )
             for item in quizzes
         ],
+        study_topics=[
+            StudyTopicSummary(
+                id=item["id"],
+                title=item["title"],
+                topic=item["topic"],
+                source_url=item["source_url"],
+                can_practice=item["can_practice"],
+                quiz_count=item["quiz_count"],
+                completed=item["completed"],
+                quizzes=[
+                    QuizSummary(
+                        id=quiz["id"],
+                        title=quiz["title"],
+                        topic=quiz["topic"],
+                        created_at=_serialize_created_at(quiz["created_at"]),
+                        question_count=quiz["question_count"],
+                        attempt_count=quiz["attempt_count"],
+                        best_score=quiz["best_score"],
+                        study_topic_id=quiz.get("study_topic_id"),
+                    )
+                    for quiz in item["quizzes"]
+                ],
+            )
+            for item in study_topics
+        ],
         total_quizzes=total_quizzes,
         completed=completed,
+        total_topics=sum(1 for item in study_topics if item["id"] is not None),
     )
+
+
+@app.post(
+    "/api/v1/study-topics/{study_topic_id}/practice",
+    response_model=QuizResponse,
+)
+async def practice_study_topic(
+    study_topic_id: int,
+    request: PracticeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Generate a new quiz on an existing study topic with different questions."""
+    study_topic = get_study_topic_for_user(db, study_topic_id, current_user.id)
+    if not study_topic:
+        raise HTTPException(status_code=404, detail="Study topic not found")
+
+    source_text = (study_topic.source_text or "").strip()
+    if not source_text:
+        label = study_topic.topic or study_topic.title
+        if not label:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "This study topic does not have enough material "
+                    "to practice again."
+                ),
+            )
+        source_text = f"Create a quiz about {label}."
+
+    try:
+        generated = as_generated_quiz(
+            generate_quiz_from_text(
+                source_text,
+                study_topic.topic,
+                request.num_questions,
+                existing_questions=list_study_topic_questions(db, study_topic.id),
+            ),
+            study_topic.topic,
+        )
+        return _persist_generated_quiz(
+            db,
+            generated,
+            current_user.id,
+            study_topic_id=study_topic.id,
+        )
+    except QuizGenerationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
 
 @app.get("/api/v1/quiz/{quiz_id}")

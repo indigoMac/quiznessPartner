@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useGetQuiz, useSubmitAnswers } from "../hooks/useQuiz";
+import { useGetQuiz, usePracticeStudyTopic, useSubmitAnswers } from "../hooks/useQuiz";
 import Button from "../components/Button";
 import QuizQuestion from "../components/QuizQuestion";
 import QuizResults from "../components/QuizResults";
@@ -17,6 +17,13 @@ const QuizPage = () => {
 
   const { data: quiz, isLoading, error } = useGetQuiz(id || null);
   const submitMutation = useSubmitAnswers();
+  const practiceMutation = usePracticeStudyTopic();
+
+  useEffect(() => {
+    setSelectedAnswers({});
+    setSubmitted(false);
+    setQuizResult(null);
+  }, [id]);
 
   // Debug quiz data
   // useEffect(() => {
@@ -139,6 +146,19 @@ const QuizPage = () => {
     navigate("/");
   };
 
+  const handlePracticeAgain = async () => {
+    if (!quiz?.study_topic_id) return;
+    try {
+      const result = await practiceMutation.mutateAsync({
+        study_topic_id: quiz.study_topic_id,
+        num_questions: quiz.questions.length || 5,
+      });
+      navigate(`/quiz/${result.id}`);
+    } catch (practiceError) {
+      console.error("Error generating a new quiz on this topic:", practiceError);
+    }
+  };
+
   const handleRetry = () => {
     setSelectedAnswers({});
     setSubmitted(false);
@@ -155,9 +175,20 @@ const QuizPage = () => {
   return (
     <div className="max-w-3xl mx-auto py-8 px-4">
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-soft p-6">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-6">
-          {quiz.title || "Quiz"}
-        </h1>
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-6">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+            {quiz.title || "Quiz"}
+          </h1>
+          {quiz.study_topic_id && (
+            <Button
+              variant="secondary"
+              onClick={handlePracticeAgain}
+              isLoading={practiceMutation.isPending}
+            >
+              New quiz on this topic
+            </Button>
+          )}
+        </div>
 
         <div className="space-y-8">
           {transformedQuestions.map((question, index) => {
@@ -197,6 +228,10 @@ const QuizPage = () => {
             result={quizResult}
             onNewQuiz={handleNewQuiz}
             onRetry={handleRetry}
+            onPracticeAgain={
+              quiz.study_topic_id ? handlePracticeAgain : undefined
+            }
+            isPracticing={practiceMutation.isPending}
           />
         )}
       </div>

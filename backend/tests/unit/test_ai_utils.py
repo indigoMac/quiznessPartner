@@ -89,6 +89,44 @@ class TestAIUtils:
         assert result.title == "European Capitals"
         assert result.topic == "Geography"
 
+    @patch("ai_utils._chat_completion")
+    def test_generate_quiz_avoids_existing_questions(self, mock_openai):
+        mock_openai.return_value = json.dumps(
+            {
+                "title": "More Capitals",
+                "topic": "Geography",
+                "questions": [
+                    {
+                        "question": "What is the capital of France?",
+                        "options": ["Berlin", "Paris", "London", "Madrid"],
+                        "correct_answer": 1,
+                    },
+                    {
+                        "question": "What is the capital of Spain?",
+                        "options": ["Lisbon", "Madrid", "Rome", "Paris"],
+                        "correct_answer": 1,
+                    },
+                ],
+            }
+        )
+
+        result = generate_quiz_from_text(
+            "France and Spain are in Europe.",
+            topic="Geography",
+            num_questions=2,
+            existing_questions=[
+                {
+                    "question": "What is the capital of France?",
+                    "options": ["Berlin", "Paris", "London", "Madrid"],
+                    "correct_answer": 1,
+                }
+            ],
+        )
+
+        assert [item["question"] for item in result.questions] == [
+            "What is the capital of Spain?"
+        ]
+
     def test_as_generated_quiz_accepts_question_lists(self):
         questions = [
             {

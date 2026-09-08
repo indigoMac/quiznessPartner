@@ -11,6 +11,7 @@ export interface QuizResponse {
   id: string;
   title: string;
   topic?: string;
+  study_topic_id?: number | null;
   questions: QuizQuestion[];
   created_at?: string;
 }
@@ -58,10 +59,29 @@ export interface QuizSummary {
   question_count: number;
   attempt_count: number;
   best_score: number | null;
+  study_topic_id?: number | null;
+}
+
+export interface StudyTopicSummary {
+  id: number | null;
+  title: string;
+  topic?: string | null;
+  source_url?: string | null;
+  can_practice: boolean;
+  quiz_count: number;
+  completed: number;
+  quizzes: QuizSummary[];
 }
 
 export interface QuizListResponse {
   quizzes: QuizSummary[];
+  study_topics: StudyTopicSummary[];
   total_quizzes: number;
   completed: number;
+  total_topics: number;
+}
+
+export interface PracticeStudyTopicForm {
+  study_topic_id: number;
+  num_questions?: number;
 }
