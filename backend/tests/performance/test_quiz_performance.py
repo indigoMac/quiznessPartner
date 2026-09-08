@@ -45,7 +45,7 @@ def test_text_splitting_performance():
 
 def test_quiz_generation_error_path_performance():
     """Failed generation should raise quickly instead of returning dummy questions."""
-    with patch("ai_utils.openai.chat.completions.create") as mock_openai:
+    with patch("ai_utils._chat_completion") as mock_openai:
         mock_openai.side_effect = Exception("API Error")
         start_time = time.time()
         for _ in range(50):
@@ -163,12 +163,10 @@ def test_multiple_database_operations(db_session):
     assert len(retrieved_quizzes) == 10
 
 
-@patch('ai_utils.openai.chat.completions.create')
+@patch("ai_utils._chat_completion")
 def test_ai_processing_performance_with_mock(mock_openai):
     """Test AI processing performance with proper mocking"""
-    # Mock OpenAI response with proper structure
-    mock_response = MagicMock()
-    mock_response.choices[0].message.content = '''[
+    mock_openai.return_value = """[
         {
             "question": "What is the main topic?",
             "options": ["A", "B", "C", "D"],
@@ -179,8 +177,7 @@ def test_ai_processing_performance_with_mock(mock_openai):
             "options": ["First", "Second", "Third", "Fourth"],
             "correct_answer": 1
         }
-    ]'''
-    mock_openai.return_value = mock_response
+    ]"""
     
     start_time = time.time()
     result = generate_quiz_from_text("Test content for AI processing", topic="Performance", num_questions=2)

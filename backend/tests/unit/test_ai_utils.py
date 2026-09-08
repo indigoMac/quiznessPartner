@@ -3,14 +3,20 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ai_utils import QuizGenerationError, extract_text_from_pdf, generate_quiz_from_text
+from ai_utils import (
+    DEFAULT_LLM_BASE_URL,
+    QuizGenerationError,
+    _llm_base_url,
+    _llm_model,
+    extract_text_from_pdf,
+    generate_quiz_from_text,
+)
 
 
 class TestAIUtils:
-    @patch("ai_utils.openai.chat.completions.create")
+    @patch("ai_utils._chat_completion")
     def test_generate_quiz_from_text_success(self, mock_openai):
-        mock_response = MagicMock()
-        mock_response.choices[0].message.content = json.dumps(
+        mock_openai.return_value = json.dumps(
             [
                 {
                     "question": "What is the capital of France?",
@@ -19,7 +25,6 @@ class TestAIUtils:
                 }
             ]
         )
-        mock_openai.return_value = mock_response
 
         result = generate_quiz_from_text(
             "France is a country in Europe. Paris is its capital."
@@ -31,16 +36,14 @@ class TestAIUtils:
         assert "correct_answer" in result[0]
         assert mock_openai.called
 
-    @patch("ai_utils.openai.chat.completions.create")
+    @patch("ai_utils._chat_completion")
     def test_generate_quiz_json_error(self, mock_openai):
-        mock_response = MagicMock()
-        mock_response.choices[0].message.content = "This is not JSON"
-        mock_openai.return_value = mock_response
+        mock_openai.return_value = "This is not JSON"
 
         with pytest.raises(QuizGenerationError, match="invalid data"):
             generate_quiz_from_text("Some text")
 
-    @patch("ai_utils.openai.chat.completions.create")
+    @patch("ai_utils._chat_completion")
     def test_generate_quiz_api_error(self, mock_openai):
         mock_openai.side_effect = Exception("API Error")
 
@@ -51,22 +54,20 @@ class TestAIUtils:
         with pytest.raises(QuizGenerationError, match="No text was provided"):
             generate_quiz_from_text("   ")
 
-    @patch("ai_utils.openai.chat.completions.create")
+    def test_defaults_to_groq(self):
+        assert _llm_base_url() == DEFAULT_LLM_BASE_URL
+        assert _llm_model() == "llama-3.1-8b-instant"
+
+    @patch("ai_utils._chat_completion")
     def test_generate_quiz_rejects_empty_question_list(self, mock_openai):
-        mock_response = MagicMock()
-        mock_response.choices[0].message.content = "[]"
-        mock_openai.return_value = mock_response
+        mock_openai.return_value = "[]"
 
         with pytest.raises(QuizGenerationError, match="no questions"):
             generate_quiz_from_text("Some text")
 
-    @patch("ai_utils.openai.chat.completions.create")
+    @patch("ai_utils._chat_completion")
     def test_generate_quiz_rejects_invalid_question_structure(self, mock_openai):
-        mock_response = MagicMock()
-        mock_response.choices[0].message.content = json.dumps(
-            [{"question": "Missing options"}]
-        )
-        mock_openai.return_value = mock_response
+        mock_openai.return_value = json.dumps([{"question": "Missing options"}])
 
         with pytest.raises(QuizGenerationError, match="invalid question"):
             generate_quiz_from_text("Some text")

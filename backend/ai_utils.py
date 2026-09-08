@@ -5,11 +5,12 @@ import tempfile
 from typing import Any, Dict, List, Optional
 
 import fitz  # PyMuPDF
-import openai
+from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
-openai.api_key = os.getenv("OPENAI_API_KEY", "")
+DEFAULT_LLM_BASE_URL = "https://api.groq.com/openai/v1"
+DEFAULT_LLM_MODEL = "llama-3.1-8b-instant"
 
 
 class QuizGenerationError(Exception):
@@ -53,13 +54,55 @@ def split_text(
     return chunks
 
 
+def _llm_api_key() -> str:
+    return (
+        os.getenv("LLM_API_KEY")
+        or os.getenv("GROQ_API_KEY")
+        or os.getenv("OPENAI_API_KEY")
+        or ""
+    )
+
+
+def _llm_base_url() -> str:
+    return os.getenv("LLM_BASE_URL", DEFAULT_LLM_BASE_URL)
+
+
+def _llm_model() -> str:
+    return os.getenv("LLM_MODEL") or os.getenv("OPENAI_MODEL") or DEFAULT_LLM_MODEL
+
+
+def _chat_completion(prompt: str) -> str:
+    """Call the configured OpenAI-compatible chat API and return message text."""
+    client = OpenAI(api_key=_llm_api_key(), base_url=_llm_base_url())
+    response = client.chat.completions.create(
+        model=_llm_model(),
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a helpful assistant that generates quiz questions "
+                    "in JSON format. Only return valid JSON."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.7,
+    )
+    content = response.choices[0].message.content
+    if not content or not content.strip():
+        raise QuizGenerationError(
+            "Quiz generation returned an empty response. Please try again."
+        )
+    return content.strip()
+
+
 def generate_quiz_from_text(
     text: str, topic: Optional[str] = None, num_questions: int = 5
 ) -> List[Dict[str, Any]]:
-    """Generate a quiz from text using OpenAI.
+    """Generate a quiz from text using the configured LLM provider.
 
-    Raises QuizGenerationError when generation fails so callers can show
-    the failure instead of substituting dummy questions.
+    Defaults to Groq (OpenAI-compatible). Override with LLM_BASE_URL,
+    LLM_MODEL, and LLM_API_KEY / GROQ_API_KEY / OPENAI_API_KEY.
     """
     if not text or not text.strip():
         raise QuizGenerationError("No text was provided to generate a quiz from.")
@@ -87,23 +130,11 @@ def generate_quiz_from_text(
     """
 
     try:
-        response = openai.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a helpful assistant that generates quiz questions "
-                        "in JSON format. Only return valid JSON."
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.7,
-        )
-        result = response.choices[0].message.content.strip()
+        result = _chat_completion(prompt)
+    except QuizGenerationError:
+        raise
     except Exception as exc:
-        logger.exception("OpenAI quiz generation failed")
+        logger.exception("Quiz generation failed")
         raise QuizGenerationError(
             "Quiz generation failed. Please try again."
         ) from exc
