@@ -1,4 +1,5 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "../context/AuthContext";
 import {
   generateQuiz,
   uploadDocument,
@@ -23,15 +24,22 @@ export const useHealthCheck = () => {
 
 // Hook for generating a quiz from text
 export const useGenerateQuiz = () => {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: GenerateQuizForm) => generateQuiz(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["my-quizzes"] });
+    },
   });
 };
 
-// Hook for uploading a document
 export const useUploadDocument = () => {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: UploadDocumentForm) => uploadDocument(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["my-quizzes"] });
+    },
   });
 };
 
@@ -46,14 +54,20 @@ export const useGetQuiz = (quizId: string | null) => {
 
 // Hook for submitting quiz answers
 export const useSubmitAnswers = () => {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: AnswerSubmission) => submitAnswers(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["my-quizzes"] });
+    },
   });
 };
 
 export const useMyQuizzes = () => {
+  const { token } = useAuth();
   return useQuery({
     queryKey: ["my-quizzes"],
     queryFn: listMyQuizzes,
+    enabled: !!token,
   });
 };

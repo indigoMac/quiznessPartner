@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios, { AxiosHeaders } from "axios";
 import API_BASE_URL from "./config";
 import type {
   QuizResponse,
@@ -9,19 +9,16 @@ import type {
   QuizListResponse,
 } from "../types/api";
 
-const API_URL = API_BASE_URL;
-
-// Create an axios instance with base URL
 const api = axios.create({
-  baseURL: API_URL,
+  baseURL: API_BASE_URL,
 });
 
-// Add request interceptor to include auth token
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
   if (token) {
-    config.headers = config.headers || {};
-    config.headers.Authorization = `Bearer ${token}`;
+    const headers = AxiosHeaders.from(config.headers);
+    headers.set("Authorization", `Bearer ${token}`);
+    config.headers = headers;
   }
   return config;
 });
@@ -88,6 +85,18 @@ export const checkHealth = async (): Promise<{
 };
 
 export const listMyQuizzes = async (): Promise<QuizListResponse> => {
-  const response = await api.get<QuizListResponse>("/api/v1/quizzes");
-  return response.data;
+  const token = localStorage.getItem("token");
+  const headers: HeadersInit = {};
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${API_BASE_URL}/api/v1/quizzes`, { headers });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    const detail =
+      typeof error.detail === "string" ? error.detail : "Failed to load quizzes";
+    throw new Error(detail);
+  }
+  return response.json();
 };

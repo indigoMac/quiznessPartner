@@ -5,12 +5,19 @@ import tempfile
 from typing import Any, Dict, List, Optional
 
 import fitz  # PyMuPDF
-from openai import OpenAI
+from openai import NotFoundError, OpenAI
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_LLM_BASE_URL = "https://api.groq.com/openai/v1"
 DEFAULT_LLM_MODEL = "openai/gpt-oss-20b"
+DEPRECATED_LLM_MODELS = {
+    "llama-3.1-8b-instant": "openai/gpt-oss-20b",
+    "llama-3.3-70b-versatile": "openai/gpt-oss-120b",
+    "llama3-8b-8192": "openai/gpt-oss-20b",
+    "llama3-70b-8192": "openai/gpt-oss-120b",
+}
+GROQ_FALLBACK_MODELS = ("openai/gpt-oss-20b", "openai/gpt-oss-120b")
 
 
 class QuizGenerationError(Exception):
@@ -68,32 +75,58 @@ def _llm_base_url() -> str:
 
 
 def _llm_model() -> str:
-    return os.getenv("LLM_MODEL") or os.getenv("OPENAI_MODEL") or DEFAULT_LLM_MODEL
+    requested = os.getenv("LLM_MODEL") or os.getenv("OPENAI_MODEL") or DEFAULT_LLM_MODEL
+    return DEPRECATED_LLM_MODELS.get(requested, requested)
+
+
+def _models_to_try() -> List[str]:
+    models = [_llm_model()]
+    for fallback in GROQ_FALLBACK_MODELS:
+        if fallback not in models:
+            models.append(fallback)
+    return models
 
 
 def _chat_completion(prompt: str) -> str:
     """Call the configured OpenAI-compatible chat API and return message text."""
     client = OpenAI(api_key=_llm_api_key(), base_url=_llm_base_url())
-    response = client.chat.completions.create(
-        model=_llm_model(),
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are a helpful assistant that generates quiz questions "
-                    "in JSON format. Only return valid JSON."
-                ),
-            },
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.7,
-    )
-    content = response.choices[0].message.content
-    if not content or not content.strip():
-        raise QuizGenerationError(
-            "Quiz generation returned an empty response. Please try again."
-        )
-    return content.strip()
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a helpful assistant that generates quiz questions "
+                "in JSON format. Only return valid JSON."
+            ),
+        },
+        {"role": "user", "content": prompt},
+    ]
+    last_error: Optional[Exception] = None
+    for model in _models_to_try():
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=0.7,
+            )
+            content = response.choices[0].message.content
+            if not content or not content.strip():
+                raise QuizGenerationError(
+                    "Quiz generation returned an empty response. Please try again."
+                )
+            if model != _llm_model():
+                logger.warning("Using fallback LLM model %s", model)
+            return content.strip()
+        except QuizGenerationError:
+            raise
+        except NotFoundError as exc:
+            logger.warning("LLM model %s is unavailable, trying the next option", model)
+            last_error = exc
+            continue
+
+    logger.exception("Quiz generation failed after trying models %s", _models_to_try())
+    raise QuizGenerationError(
+        "Quiz generation failed. Please try again."
+    ) from last_error
 
 
 def generate_quiz_from_text(

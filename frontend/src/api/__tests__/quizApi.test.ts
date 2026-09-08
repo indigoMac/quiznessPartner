@@ -1,5 +1,32 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
-import type { InternalAxiosRequestConfig } from "axios";
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
+
+const { MockAxiosHeaders } = vi.hoisted(() => {
+  class MockAxiosHeaders {
+    private values: Record<string, string>;
+
+    constructor(headers: Record<string, string> = {}) {
+      this.values = { ...headers };
+    }
+
+    static from(headers?: unknown) {
+      if (headers instanceof MockAxiosHeaders) {
+        return headers;
+      }
+      return new MockAxiosHeaders((headers as Record<string, string>) || {});
+    }
+
+    set(key: string, value: string) {
+      this.values[key] = value;
+      return this;
+    }
+
+    get(key: string) {
+      return this.values[key];
+    }
+  }
+
+  return { MockAxiosHeaders };
+});
 
 vi.mock("axios", () => {
   const mockPost = vi.fn().mockResolvedValue({ data: { title: "Mock Quiz" } });
@@ -7,6 +34,7 @@ vi.mock("axios", () => {
   const mockUse = vi.fn().mockImplementation((interceptor) => interceptor);
 
   return {
+    AxiosHeaders: MockAxiosHeaders,
     default: {
       create: vi.fn(() => ({
         post: mockPost,
@@ -26,28 +54,58 @@ import {
   getQuiz,
   submitAnswers,
   checkHealth,
+  listMyQuizzes,
 } from "../quizApi";
+import API_BASE_URL from "../config";
 
 describe("Quiz API", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  beforeEach(async () => {
     localStorage.clear();
+    const mockAxios = (await import("axios")).default;
+    const instance = mockAxios.create();
+    (instance.post as unknown as { mockClear: () => void }).mockClear();
+    (instance.get as unknown as { mockClear: () => void }).mockClear();
   });
 
-  it("adds auth token to request headers", async () => {
-    const token = "test-token";
-    localStorage.setItem("token", token);
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
 
-    const config = { headers: {} } as InternalAxiosRequestConfig;
-    const addToken = (config: InternalAxiosRequestConfig) => {
-      if (token) {
-        config.headers = config.headers || {};
-        config.headers.Authorization = `Bearer ${token}`;
-      }
-      return config;
-    };
-    const result = addToken(config);
-    expect(result.headers.Authorization).toBe(`Bearer ${token}`);
+  it("attaches Authorization via AxiosHeaders on axios requests", async () => {
+    localStorage.setItem("token", "test-token");
+    const mockAxios = (await import("axios")).default;
+    const instance = mockAxios.create();
+    const interceptor = (
+      instance.interceptors.request.use as ReturnType<typeof vi.fn>
+    ).mock.calls[0][0];
+
+    const result = interceptor({ headers: {} });
+    expect(result.headers.get("Authorization")).toBe("Bearer test-token");
+  });
+
+  it("lists quizzes with the stored bearer token", async () => {
+    localStorage.setItem("token", "test-token");
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ quizzes: [], total_quizzes: 0, completed: 0 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await listMyQuizzes();
+
+    expect(fetchMock).toHaveBeenCalledWith(`${API_BASE_URL}/api/v1/quizzes`, {
+      headers: { Authorization: "Bearer test-token" },
+    });
+  });
+
+  it("throws when listing quizzes fails", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      json: async () => ({ detail: "Could not validate credentials" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listMyQuizzes()).rejects.toThrow("Could not validate credentials");
   });
 
   it("generates a quiz", async () => {

@@ -58,6 +58,10 @@ class TestAIUtils:
         assert _llm_base_url() == DEFAULT_LLM_BASE_URL
         assert _llm_model() == "openai/gpt-oss-20b"
 
+    def test_maps_deprecated_groq_model(self, monkeypatch):
+        monkeypatch.setenv("LLM_MODEL", "llama-3.1-8b-instant")
+        assert _llm_model() == "openai/gpt-oss-20b"
+
     @patch("ai_utils._chat_completion")
     def test_generate_quiz_rejects_empty_question_list(self, mock_openai):
         mock_openai.return_value = "[]"

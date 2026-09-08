@@ -12,7 +12,7 @@ BCRYPT_MAX_PASSWORD_BYTES = 72
 class AuthSettings(BaseSettings):
     secret_key: str
     algorithm: str = "HS256"
-    access_token_expire_minutes: int = 30
+    access_token_expire_minutes: int = 60 * 24 * 7
 
     class Config:
         env_file = ".env"
