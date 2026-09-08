@@ -10,7 +10,7 @@ from openai import OpenAI
 logger = logging.getLogger(__name__)
 
 DEFAULT_LLM_BASE_URL = "https://api.groq.com/openai/v1"
-DEFAULT_LLM_MODEL = "llama-3.1-8b-instant"
+DEFAULT_LLM_MODEL = "openai/gpt-oss-20b"
 
 
 class QuizGenerationError(Exception):

@@ -56,7 +56,7 @@ class TestAIUtils:
 
     def test_defaults_to_groq(self):
         assert _llm_base_url() == DEFAULT_LLM_BASE_URL
-        assert _llm_model() == "llama-3.1-8b-instant"
+        assert _llm_model() == "openai/gpt-oss-20b"
 
     @patch("ai_utils._chat_completion")
     def test_generate_quiz_rejects_empty_question_list(self, mock_openai):
