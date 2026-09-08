@@ -5,10 +5,14 @@ import FileUpload from "./FileUpload";
 import TextArea from "./TextArea";
 import Input from "./Input";
 import Button from "./Button";
-import { useGenerateQuiz, useUploadDocument } from "../hooks/useQuiz";
+import {
+  useGenerateQuiz,
+  useGenerateQuizFromUrl,
+  useUploadDocument,
+} from "../hooks/useQuiz";
 import type { AxiosError } from "axios";
 
-type TabType = "upload" | "text";
+type TabType = "upload" | "text" | "url";
 
 interface TabProps {
   label: string;
@@ -31,16 +35,25 @@ const Tab: React.FC<TabProps> = ({ label, active, onClick }) => (
   </button>
 );
 
+function apiErrorMessage(error: unknown, fallback: string) {
+  return (
+    ((error as AxiosError)?.response?.data as { detail?: string })?.detail ||
+    fallback
+  );
+}
+
 export default function CreateQuiz() {
   const [activeTab, setActiveTab] = useState<TabType>("upload");
   const [file, setFile] = useState<File | null>(null);
   const [content, setContent] = useState("");
+  const [sourceUrl, setSourceUrl] = useState("");
   const [topic, setTopic] = useState("");
   const [numQuestions, setNumQuestions] = useState(5);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const generateQuizMutation = useGenerateQuiz();
+  const generateFromUrlMutation = useGenerateQuizFromUrl();
   const uploadDocumentMutation = useUploadDocument();
 
   const handleTabChange = (tab: TabType) => {
@@ -71,8 +84,10 @@ export default function CreateQuiz() {
     } catch (error: unknown) {
       console.error("Error uploading document:", error);
       setError(
-        ((error as AxiosError)?.response?.data as { detail: string })?.detail ||
+        apiErrorMessage(
+          error,
           "An error occurred while processing your document. Please try again."
+        )
       );
     }
   };
@@ -95,14 +110,69 @@ export default function CreateQuiz() {
     } catch (error: unknown) {
       console.error("Error generating quiz:", error);
       setError(
-        ((error as AxiosError)?.response?.data as { detail: string })?.detail ||
+        apiErrorMessage(
+          error,
           "An error occurred while generating your quiz. Please try again."
+        )
       );
     }
   };
 
+  const handleUrlSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = sourceUrl.trim();
+    if (!trimmed) {
+      setError("Please enter a URL");
+      return;
+    }
+
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        setError("Enter a public http or https URL.");
+        return;
+      }
+    } catch {
+      setError("Enter a valid URL.");
+      return;
+    }
+
+    try {
+      const result = await generateFromUrlMutation.mutateAsync({
+        url: trimmed,
+        topic: topic || undefined,
+        num_questions: numQuestions,
+      });
+
+      navigate(`/quiz/${result.id}`);
+    } catch (error: unknown) {
+      console.error("Error generating quiz from URL:", error);
+      setError(
+        apiErrorMessage(
+          error,
+          "An error occurred while generating your quiz. Please try again."
+        )
+      );
+    }
+  };
+
+  const submitHandler =
+    activeTab === "upload"
+      ? handleUploadSubmit
+      : activeTab === "url"
+        ? handleUrlSubmit
+        : handleTextSubmit;
+
   const isLoading =
-    uploadDocumentMutation.isPending || generateQuizMutation.isPending;
+    uploadDocumentMutation.isPending ||
+    generateQuizMutation.isPending ||
+    generateFromUrlMutation.isPending;
+
+  const isSubmitDisabled =
+    isLoading ||
+    (activeTab === "text" && !content) ||
+    (activeTab === "upload" && !file) ||
+    (activeTab === "url" && !sourceUrl.trim());
 
   return (
     <div className="max-w-3xl mx-auto animate-slide-up">
@@ -110,7 +180,7 @@ export default function CreateQuiz() {
 
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
         <div className="mb-6">
-          <div className="flex space-x-4 mb-6">
+          <div className="flex flex-wrap gap-2 mb-6">
             <Tab
               label="Upload Document"
               active={activeTab === "upload"}
@@ -120,6 +190,11 @@ export default function CreateQuiz() {
               label="Enter Text"
               active={activeTab === "text"}
               onClick={() => handleTabChange("text")}
+            />
+            <Tab
+              label="From URL"
+              active={activeTab === "url"}
+              onClick={() => handleTabChange("url")}
             />
           </div>
 
@@ -144,12 +219,7 @@ export default function CreateQuiz() {
             </div>
           )}
 
-          <form
-            role="form"
-            onSubmit={
-              activeTab === "upload" ? handleUploadSubmit : handleTextSubmit
-            }
-          >
+          <form role="form" onSubmit={submitHandler}>
             <div className="space-y-6">
               <div>
                 <Input
@@ -158,7 +228,7 @@ export default function CreateQuiz() {
                   onChange={(e: ChangeEvent<HTMLInputElement>) =>
                     setTopic(e.target.value)
                   }
-                  placeholder="Enter a topic for your quiz"
+                  placeholder="Leave blank to infer a topic"
                 />
               </div>
 
@@ -175,14 +245,16 @@ export default function CreateQuiz() {
                 />
               </div>
 
-              {activeTab === "upload" ? (
+              {activeTab === "upload" && (
                 <div>
                   <FileUpload
                     onFileSelect={handleFileSelect}
                     accept=".pdf,.txt"
                   />
                 </div>
-              ) : (
+              )}
+
+              {activeTab === "text" && (
                 <div>
                   <TextArea
                     label="Enter your text"
@@ -190,21 +262,34 @@ export default function CreateQuiz() {
                     onChange={(e: ChangeEvent<HTMLTextAreaElement>) =>
                       setContent(e.target.value)
                     }
-                    placeholder="Enter the text you want to generate questions from..."
+                    placeholder="Paste notes, lecture text, or anything you want to study..."
                     rows={10}
                     required
                   />
                 </div>
               )}
 
+              {activeTab === "url" && (
+                <div>
+                  <Input
+                    label="Page URL"
+                    value={sourceUrl}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                      setSourceUrl(e.target.value)
+                    }
+                    placeholder="https://example.com/article"
+                  />
+                  <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                    Public articles and PDF links work. Pages that need a login
+                    usually cannot be imported.
+                  </p>
+                </div>
+              )}
+
               <div>
                 <Button
                   type="submit"
-                  disabled={
-                    isLoading ||
-                    (activeTab === "text" && !content) ||
-                    (activeTab === "upload" && !file)
-                  }
+                  disabled={isSubmitDisabled}
                   isLoading={isLoading}
                   className="w-full"
                 >

@@ -50,6 +50,7 @@ vi.mock("axios", () => {
 
 import {
   generateQuiz,
+  generateQuizFromUrl,
   uploadDocument,
   getQuiz,
   submitAnswers,
@@ -121,6 +122,22 @@ describe("Quiz API", () => {
     const postCall = instance.post as unknown as jest.Mock;
     const [url, payload] = postCall.mock.calls[0];
     expect(url).toBe("/api/v1/generate-quiz");
+    expect(payload).toEqual(data);
+  });
+
+  it("generates a quiz from a URL", async () => {
+    const data = {
+      url: "https://example.com/article",
+      topic: "Biology",
+      num_questions: 5,
+    };
+    await generateQuizFromUrl(data);
+
+    const mockAxios = (await import("axios")).default;
+    const instance = mockAxios.create();
+    const postCall = instance.post as unknown as jest.Mock;
+    const [url, payload] = postCall.mock.calls[0];
+    expect(url).toBe("/api/v1/generate-quiz-from-url");
     expect(payload).toEqual(data);
   });
 

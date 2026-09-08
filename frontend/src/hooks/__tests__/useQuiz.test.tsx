@@ -14,6 +14,7 @@ vi.mock("../../context/AuthContext", () => ({
 
 vi.mock("../../api/quizApi", () => ({
   generateQuiz: vi.fn(),
+  generateQuizFromUrl: vi.fn(),
   uploadDocument: vi.fn(),
   getQuiz: vi.fn(),
   submitAnswers: vi.fn(),

@@ -5,6 +5,7 @@ import type {
   AnswerSubmission,
   QuizResult,
   GenerateQuizForm,
+  GenerateQuizFromUrlForm,
   UploadDocumentForm,
   QuizListResponse,
 } from "../types/api";
@@ -28,6 +29,16 @@ export const generateQuiz = async (
   data: GenerateQuizForm
 ): Promise<QuizResponse> => {
   const response = await api.post<QuizResponse>("/api/v1/generate-quiz", data);
+  return response.data;
+};
+
+export const generateQuizFromUrl = async (
+  data: GenerateQuizFromUrlForm
+): Promise<QuizResponse> => {
+  const response = await api.post<QuizResponse>(
+    "/api/v1/generate-quiz-from-url",
+    data
+  );
   return response.data;
 };
 

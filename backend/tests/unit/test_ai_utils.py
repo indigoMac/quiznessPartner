@@ -12,6 +12,7 @@ from ai_utils import (
     as_generated_quiz,
     extract_text_from_pdf,
     generate_quiz_from_text,
+    select_source_chunks,
 )
 
 
@@ -163,3 +164,58 @@ class TestAIUtils:
         text = extract_text_from_pdf(pdf_file)
         assert text == "Hello from PDF"
         mock_unlink.assert_called_once()
+
+    def test_select_source_chunks_keeps_short_text(self):
+        text = "Short source material about rivers."
+        assert select_source_chunks(text) == [text]
+
+    def test_select_source_chunks_spreads_long_text(self):
+        text = "This is a reasonably long test sentence used for chunking. " * 200
+        chunks = select_source_chunks(text, chunk_size=800, max_chunks=4)
+        assert 2 <= len(chunks) <= 4
+        assert chunks[0] != chunks[-1]
+
+    @patch("ai_utils._chat_completion")
+    def test_generate_quiz_uses_multiple_chunks(self, mock_openai):
+        long_text = "This is a reasonably long test sentence used for chunking. " * 100
+        mock_openai.side_effect = [
+            json.dumps(
+                {
+                    "title": "Chunked Source Quiz",
+                    "topic": "Study Notes",
+                    "questions": [
+                        {
+                            "question": "Question from the opening?",
+                            "options": ["A", "B", "C", "D"],
+                            "correct_answer": 0,
+                        },
+                        {
+                            "question": "Another opening question?",
+                            "options": ["A", "B", "C", "D"],
+                            "correct_answer": 1,
+                        },
+                    ],
+                }
+            ),
+            json.dumps(
+                [
+                    {
+                        "question": "Question from later in the notes?",
+                        "options": ["A", "B", "C", "D"],
+                        "correct_answer": 2,
+                    }
+                ]
+            ),
+        ]
+
+        result = generate_quiz_from_text(long_text, num_questions=3)
+
+        assert result.title == "Chunked Source Quiz"
+        assert result.topic == "Study Notes"
+        assert len(result.questions) == 3
+        assert mock_openai.call_count >= 2
+        assert {item["question"] for item in result.questions} == {
+            "Question from the opening?",
+            "Another opening question?",
+            "Question from later in the notes?",
+        }

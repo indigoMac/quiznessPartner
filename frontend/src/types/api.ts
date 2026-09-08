@@ -44,6 +44,12 @@ export interface GenerateQuizForm {
   num_questions?: number;
 }
 
+export interface GenerateQuizFromUrlForm {
+  url: string;
+  topic?: string;
+  num_questions?: number;
+}
+
 export interface QuizSummary {
   id: number;
   title: string;

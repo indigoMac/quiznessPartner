@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ai_utils import (
@@ -25,6 +25,7 @@ from db_utils import (
     record_quiz_result,
 )
 from models.user import User
+from url_utils import UrlFetchError, fetch_url_text
 
 load_dotenv()
 
@@ -69,7 +70,13 @@ app.include_router(auth_router, prefix="/api/v1")
 class QuizRequest(BaseModel):
     content: str
     topic: Optional[str] = None
-    num_questions: int = 5
+    num_questions: int = Field(default=5, ge=1, le=20)
+
+
+class UrlQuizRequest(BaseModel):
+    url: str
+    topic: Optional[str] = None
+    num_questions: int = Field(default=5, ge=1, le=20)
 
 
 class AnswerSubmission(BaseModel):
@@ -113,6 +120,20 @@ def _serialize_created_at(value) -> Optional[str]:
     return value.isoformat()
 
 
+def _persist_generated_quiz(
+    db: Session, generated, user_id: int
+) -> QuizResponse:
+    quiz = create_quiz(db, generated.title, generated.topic, user_id)
+    add_questions_to_quiz(db, quiz.id, generated.questions)
+    complete_quiz = get_quiz_with_questions(db, quiz.id)
+    return QuizResponse(
+        id=str(complete_quiz["id"]),
+        title=complete_quiz["title"],
+        topic=complete_quiz["topic"],
+        questions=complete_quiz["questions"],
+    )
+
+
 @app.get("/")
 async def root():
     """Root endpoint"""
@@ -139,19 +160,7 @@ async def generate_quiz(
             ),
             request.topic,
         )
-
-        quiz = create_quiz(
-            db, generated.title, generated.topic, current_user.id
-        )
-        add_questions_to_quiz(db, quiz.id, generated.questions)
-        complete_quiz = get_quiz_with_questions(db, quiz.id)
-
-        return QuizResponse(
-            id=str(complete_quiz["id"]),
-            title=complete_quiz["title"],
-            topic=complete_quiz["topic"],
-            questions=complete_quiz["questions"],
-        )
+        return _persist_generated_quiz(db, generated, current_user.id)
     except QuizGenerationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except HTTPException:
@@ -192,16 +201,32 @@ async def upload_document(
             generate_quiz_from_text(text, topic, num_questions),
             topic,
         )
-        quiz = create_quiz(db, generated.title, generated.topic, current_user.id)
-        add_questions_to_quiz(db, quiz.id, generated.questions)
-        complete_quiz = get_quiz_with_questions(db, quiz.id)
+        return _persist_generated_quiz(db, generated, current_user.id)
+    except QuizGenerationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
-        return QuizResponse(
-            id=str(complete_quiz["id"]),
-            title=complete_quiz["title"],
-            topic=complete_quiz["topic"],
-            questions=complete_quiz["questions"],
+
+@app.post("/api/v1/generate-quiz-from-url", response_model=QuizResponse)
+async def generate_quiz_from_url(
+    request: UrlQuizRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Generate a quiz from a public web page or PDF URL."""
+    try:
+        text, page_title = fetch_url_text(request.url)
+        topic = request.topic or page_title
+        generated = as_generated_quiz(
+            generate_quiz_from_text(text, topic, request.num_questions),
+            topic,
         )
+        return _persist_generated_quiz(db, generated, current_user.id)
+    except UrlFetchError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except QuizGenerationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except HTTPException:

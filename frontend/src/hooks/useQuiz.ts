@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../context/AuthContext";
 import {
   generateQuiz,
+  generateQuizFromUrl,
   uploadDocument,
   getQuiz,
   submitAnswers,
@@ -10,6 +11,7 @@ import {
 } from "../api/quizApi";
 import type {
   GenerateQuizForm,
+  GenerateQuizFromUrlForm,
   UploadDocumentForm,
   AnswerSubmission,
 } from "../types/api";
@@ -27,6 +29,16 @@ export const useGenerateQuiz = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: GenerateQuizForm) => generateQuiz(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["my-quizzes"] });
+    },
+  });
+};
+
+export const useGenerateQuizFromUrl = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: GenerateQuizFromUrlForm) => generateQuizFromUrl(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["my-quizzes"] });
     },

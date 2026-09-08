@@ -466,6 +466,55 @@ def test_generate_quiz_requires_auth(setup_db):
     assert response.status_code == 401
 
 
+def test_generate_quiz_from_url_requires_auth(setup_db):
+    response = client.post(
+        "/api/v1/generate-quiz-from-url",
+        json={"url": "https://example.com/article", "num_questions": 1},
+    )
+    assert response.status_code == 401
+
+
+@patch("main.generate_quiz_from_text")
+@patch("main.fetch_url_text")
+def test_generate_quiz_from_url(mock_fetch_url, mock_generate_quiz, auth_token):
+    mock_fetch_url.return_value = (
+        "Plants convert sunlight into energy through photosynthesis.",
+        "Photosynthesis",
+    )
+    mock_generate_quiz.return_value = GeneratedQuiz(
+        title="Photosynthesis Basics",
+        topic="Biology",
+        questions=[
+            {
+                "question": "What do plants convert sunlight into?",
+                "options": ["Heat", "Energy", "Soil", "Water"],
+                "correct_answer": 1,
+            }
+        ],
+    )
+
+    response = client.post(
+        "/api/v1/generate-quiz-from-url",
+        headers=auth_token,
+        json={"url": "https://example.com/article", "num_questions": 1},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["title"] == "Photosynthesis Basics"
+    assert data["topic"] == "Biology"
+    mock_fetch_url.assert_called_once_with("https://example.com/article")
+
+
+def test_generate_quiz_from_url_rejects_private_addresses(auth_token):
+    response = client.post(
+        "/api/v1/generate-quiz-from-url",
+        headers=auth_token,
+        json={"url": "http://127.0.0.1/secret", "num_questions": 1},
+    )
+    assert response.status_code == 400
+    assert "not allowed" in response.json()["detail"]
+
+
 def test_list_quizzes_requires_auth(setup_db):
     response = client.get("/api/v1/quizzes")
     assert response.status_code == 401

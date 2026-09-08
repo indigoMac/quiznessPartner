@@ -1,36 +1,34 @@
 // Mock the hooks
 const mockMutateAsync = vi.fn().mockResolvedValue({ id: "123" });
+const mockUrlMutateAsync = vi.fn().mockResolvedValue({ id: "456" });
+
+const pendingMutation = {
+  mutate: vi.fn(),
+  isPending: false,
+  isError: false,
+  isSuccess: true,
+  isIdle: false,
+  status: "success",
+  data: null,
+  error: null,
+  reset: vi.fn(),
+  failureCount: 0,
+  failureReason: null,
+  variables: undefined,
+};
 
 vi.mock("../../hooks/useQuiz", () => ({
   useGenerateQuiz: () => ({
+    ...pendingMutation,
     mutateAsync: mockMutateAsync,
-    mutate: vi.fn(),
-    isPending: false,
-    isError: false,
-    isSuccess: true,
-    isIdle: false,
-    status: "success",
-    data: null,
-    error: null,
-    reset: vi.fn(),
-    failureCount: 0,
-    failureReason: null,
-    variables: undefined,
+  }),
+  useGenerateQuizFromUrl: () => ({
+    ...pendingMutation,
+    mutateAsync: mockUrlMutateAsync,
   }),
   useUploadDocument: () => ({
+    ...pendingMutation,
     mutateAsync: vi.fn().mockResolvedValue({ id: "123" }),
-    mutate: vi.fn(),
-    isPending: false,
-    isError: false,
-    isSuccess: true,
-    isIdle: false,
-    status: "success",
-    data: null,
-    error: null,
-    reset: vi.fn(),
-    failureCount: 0,
-    failureReason: null,
-    variables: undefined,
   }),
 }));
 
@@ -50,11 +48,12 @@ const wrapper = ({ children }: { children: React.ReactNode }) => (
 );
 
 describe("CreateQuiz", () => {
-  it("renders both upload and text input tabs", () => {
+  it("renders upload, text, and URL tabs", () => {
     render(<CreateQuiz />, { wrapper });
 
     expect(screen.getByText("Upload Document")).toBeInTheDocument();
     expect(screen.getByText("Enter Text")).toBeInTheDocument();
+    expect(screen.getByText("From URL")).toBeInTheDocument();
   });
 
   it("switches between upload and text input modes", async () => {
@@ -116,7 +115,7 @@ describe("CreateQuiz", () => {
     render(<CreateQuiz />, { wrapper });
 
     const topicInput = screen.getByPlaceholderText(
-      "Enter a topic for your quiz"
+      "Leave blank to infer a topic"
     );
     const numQuestionsInput = screen.getByLabelText("Number of Questions");
 
@@ -172,5 +171,37 @@ describe("CreateQuiz", () => {
       topic: "Sample Topic",
       num_questions: 5,
     });
+  });
+
+  it("handles URL submission", async () => {
+    render(<CreateQuiz />, { wrapper });
+
+    fireEvent.click(screen.getByText(/from url/i));
+
+    const urlInput = screen.getByLabelText(/page url/i);
+    fireEvent.change(urlInput, {
+      target: { value: "https://example.com/notes" },
+    });
+
+    const submitButton = screen.getByRole("button", { name: /create quiz/i });
+    fireEvent.click(submitButton);
+
+    expect(mockUrlMutateAsync).toHaveBeenCalledWith({
+      url: "https://example.com/notes",
+      topic: undefined,
+      num_questions: 5,
+    });
+  });
+
+  it("shows validation error when submitting without a URL", async () => {
+    render(<CreateQuiz />, { wrapper });
+
+    fireEvent.click(screen.getByText(/from url/i));
+    const form = screen.getByRole("form");
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true }));
+    });
+
+    expect(await screen.findByText("Please enter a URL")).toBeInTheDocument();
   });
 });

@@ -118,6 +118,204 @@ def split_text(
     return chunks
 
 
+SOURCE_CHUNK_SIZE = 3500
+MAX_SOURCE_CHUNKS = 4
+MAX_QUESTIONS = 20
+
+
+def select_source_chunks(
+    text: str, chunk_size: int = SOURCE_CHUNK_SIZE, max_chunks: int = MAX_SOURCE_CHUNKS
+) -> List[str]:
+    """Split long sources and keep a spread of chunks, not just the opening."""
+    cleaned = " ".join(text.split())
+    if not cleaned:
+        return []
+    if len(cleaned) <= chunk_size:
+        return [cleaned]
+
+    chunks = [
+        chunk.strip()
+        for chunk in split_text(cleaned, chunk_size=chunk_size)
+        if chunk.strip()
+    ]
+    if len(chunks) <= max_chunks:
+        return chunks
+
+    last_index = len(chunks) - 1
+    indexes = [
+        round(i * last_index / (max_chunks - 1)) for i in range(max_chunks)
+    ]
+    selected = []
+    seen = set()
+    for index in indexes:
+        if index not in seen:
+            selected.append(chunks[index])
+            seen.add(index)
+    return selected
+
+
+def _question_counts(num_questions: int, chunk_count: int) -> List[int]:
+    if chunk_count <= 0:
+        return []
+    base, remainder = divmod(num_questions, chunk_count)
+    return [base + (1 if i < remainder else 0) for i in range(chunk_count)]
+
+
+def _strip_json_fences(result: str) -> str:
+    if result.startswith("```json"):
+        result = result.replace("```json", "", 1)
+    if result.endswith("```"):
+        result = result.replace("```", "", 1)
+    return result.strip()
+
+
+def _normalize_question_text(question: str) -> str:
+    return " ".join(str(question).lower().split())
+
+
+def _dedupe_questions(questions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    unique: List[Dict[str, Any]] = []
+    seen = set()
+    for question in questions:
+        key = _normalize_question_text(question.get("question", ""))
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        unique.append(question)
+    return unique
+
+
+def _validate_questions(questions: Any) -> List[Dict[str, Any]]:
+    if not isinstance(questions, list) or not questions:
+        raise QuizGenerationError(
+            "Quiz generation returned no questions. Try different content."
+        )
+
+    for question in questions:
+        if (
+            "question" not in question
+            or "options" not in question
+            or "correct_answer" not in question
+        ):
+            raise QuizGenerationError(
+                "Quiz generation returned an invalid question. Please try again."
+            )
+        if not isinstance(question["options"], list) or len(question["options"]) < 2:
+            raise QuizGenerationError(
+                "Quiz generation returned invalid answer options. Please try again."
+            )
+        if not isinstance(question["correct_answer"], int):
+            try:
+                question["correct_answer"] = int(question["correct_answer"])
+            except (TypeError, ValueError) as exc:
+                raise QuizGenerationError(
+                    "Quiz generation returned an invalid correct answer. "
+                    "Please try again."
+                ) from exc
+    return questions
+
+
+def _parse_quiz_payload(result: str) -> Dict[str, Any]:
+    result = _strip_json_fences(result)
+    try:
+        payload = json.loads(result)
+    except json.JSONDecodeError as exc:
+        logger.error("Quiz generation returned invalid JSON: %s", result)
+        raise QuizGenerationError(
+            "Quiz generation returned invalid data. Please try again."
+        ) from exc
+
+    if isinstance(payload, list):
+        return {"title": None, "topic": None, "questions": payload}
+    if isinstance(payload, dict):
+        return {
+            "title": payload.get("title"),
+            "topic": payload.get("topic"),
+            "questions": payload.get("questions"),
+        }
+    raise QuizGenerationError(
+        "Quiz generation returned invalid data. Please try again."
+    )
+
+
+def _build_quiz_prompt(
+    text: str,
+    topic: Optional[str],
+    num_questions: int,
+    include_metadata: bool,
+    existing_questions: Optional[List[Dict[str, Any]]] = None,
+) -> str:
+    topic_str = (
+        f"on the topic of {topic}" if topic else "based on the following content"
+    )
+    avoid = ""
+    if existing_questions:
+        listed = "; ".join(
+            item.get("question", "") for item in existing_questions[:12]
+        )
+        avoid = f"\nDo not repeat these questions: {listed}\n"
+
+    if include_metadata:
+        return f"""
+    Create a multiple-choice quiz {topic_str}.
+    Generate {num_questions} challenging but fair questions.
+    {avoid}
+    Text: {text}
+
+    Format your response as a valid JSON object with:
+    1. 'title': a short specific quiz title (max 80 characters)
+    2. 'topic': a short topic label of 2-5 words
+    3. 'questions': an array of objects containing:
+       - 'question': The question text
+       - 'options': An array of 4 possible answers (as strings)
+       - 'correct_answer': The index (0-3) of the correct answer
+
+    ONLY return the JSON object, nothing else.
+    """
+
+    return f"""
+    Create {num_questions} multiple-choice questions {topic_str}.
+    {avoid}
+    Text: {text}
+
+    Format your response as a valid JSON array with objects containing:
+    1. 'question': The question text
+    2. 'options': An array of 4 possible answers (as strings)
+    3. 'correct_answer': The index (0-3) of the correct answer
+
+    ONLY return the JSON array, nothing else.
+    """
+
+
+def _generate_from_chunk(
+    text: str,
+    topic: Optional[str],
+    num_questions: int,
+    include_metadata: bool,
+    existing_questions: Optional[List[Dict[str, Any]]] = None,
+) -> GeneratedQuiz:
+    prompt = _build_quiz_prompt(
+        text, topic, num_questions, include_metadata, existing_questions
+    )
+    try:
+        result = _chat_completion(prompt)
+    except QuizGenerationError:
+        raise
+    except Exception as exc:
+        logger.exception("Quiz generation failed")
+        raise QuizGenerationError(
+            "Quiz generation failed. Please try again."
+        ) from exc
+
+    parsed = _parse_quiz_payload(result)
+    questions = _validate_questions(parsed["questions"])
+    return GeneratedQuiz(
+        title=resolve_quiz_title(parsed["title"], topic, questions),
+        topic=_clean_label(topic, 60) or _clean_label(parsed["topic"], 60),
+        questions=questions,
+    )
+
+
 def _llm_api_key() -> str:
     return (
         os.getenv("LLM_API_KEY")
@@ -191,99 +389,53 @@ def generate_quiz_from_text(
 ) -> GeneratedQuiz:
     """Generate a quiz from text using the configured LLM provider.
 
-    Defaults to Groq (OpenAI-compatible). Override with LLM_BASE_URL,
-    LLM_MODEL, and LLM_API_KEY / GROQ_API_KEY / OPENAI_API_KEY.
+    Long sources are split into several chunks so questions cover more than
+    the opening paragraphs. Defaults to Groq (OpenAI-compatible).
     """
     if not text or not text.strip():
         raise QuizGenerationError("No text was provided to generate a quiz from.")
 
-    if len(text) > 4000:
-        chunks = split_text(text)
-        text = chunks[0]
+    num_questions = max(1, min(int(num_questions), MAX_QUESTIONS))
+    chunks = select_source_chunks(text)
+    if not chunks:
+        raise QuizGenerationError("No text was provided to generate a quiz from.")
 
-    topic_str = (
-        f"on the topic of {topic}" if topic else "based on the following content"
-    )
+    counts = _question_counts(num_questions, len(chunks))
+    collected: List[Dict[str, Any]] = []
+    title: Optional[str] = None
+    inferred_topic: Optional[str] = topic
 
-    prompt = f"""
-    Create a multiple-choice quiz {topic_str}.
-    Generate {num_questions} challenging but fair questions.
+    for index, (chunk, count) in enumerate(zip(chunks, counts)):
+        if count <= 0:
+            continue
+        include_metadata = index == 0
+        try:
+            part = _generate_from_chunk(
+                chunk,
+                topic,
+                count,
+                include_metadata,
+                existing_questions=collected,
+            )
+        except QuizGenerationError:
+            if not collected:
+                raise
+            logger.warning("Skipping source chunk %s after generation failed", index)
+            continue
 
-    Text: {text}
+        if include_metadata:
+            title = part.title
+            inferred_topic = part.topic
+        collected.extend(part.questions)
 
-    Format your response as a valid JSON object with:
-    1. 'title': a short specific quiz title (max 80 characters)
-    2. 'topic': a short topic label of 2-5 words
-    3. 'questions': an array of objects containing:
-       - 'question': The question text
-       - 'options': An array of 4 possible answers (as strings)
-       - 'correct_answer': The index (0-3) of the correct answer
-
-    ONLY return the JSON object, nothing else.
-    """
-
-    try:
-        result = _chat_completion(prompt)
-    except QuizGenerationError:
-        raise
-    except Exception as exc:
-        logger.exception("Quiz generation failed")
-        raise QuizGenerationError(
-            "Quiz generation failed. Please try again."
-        ) from exc
-
-    if result.startswith("```json"):
-        result = result.replace("```json", "", 1)
-    if result.endswith("```"):
-        result = result.replace("```", "", 1)
-    result = result.strip()
-
-    try:
-        payload = json.loads(result)
-    except json.JSONDecodeError as exc:
-        logger.error("Quiz generation returned invalid JSON: %s", result)
-        raise QuizGenerationError(
-            "Quiz generation returned invalid data. Please try again."
-        ) from exc
-
-    generated_title = None
-    generated_topic = topic
-    if isinstance(payload, list):
-        questions = payload
-    elif isinstance(payload, dict):
-        questions = payload.get("questions")
-        generated_title = payload.get("title")
-        generated_topic = payload.get("topic") or topic
-    else:
-        raise QuizGenerationError(
-            "Quiz generation returned invalid data. Please try again."
-        )
-
-    if not isinstance(questions, list) or not questions:
+    questions = _dedupe_questions(collected)[:num_questions]
+    if not questions:
         raise QuizGenerationError(
             "Quiz generation returned no questions. Try different content."
         )
 
-    for q in questions:
-        if "question" not in q or "options" not in q or "correct_answer" not in q:
-            raise QuizGenerationError(
-                "Quiz generation returned an invalid question. Please try again."
-            )
-        if not isinstance(q["options"], list) or len(q["options"]) < 2:
-            raise QuizGenerationError(
-                "Quiz generation returned invalid answer options. Please try again."
-            )
-        if not isinstance(q["correct_answer"], int):
-            try:
-                q["correct_answer"] = int(q["correct_answer"])
-            except (TypeError, ValueError) as exc:
-                raise QuizGenerationError(
-                    "Quiz generation returned an invalid correct answer. "
-                    "Please try again."
-                ) from exc
-
     return GeneratedQuiz(
-        title=resolve_quiz_title(generated_title, topic, questions),
-        topic=_clean_label(topic, 60) or _clean_label(generated_topic, 60),
+        title=resolve_quiz_title(title, inferred_topic, questions),
+        topic=_clean_label(inferred_topic, 60),
         questions=questions,
     )
