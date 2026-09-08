@@ -20,9 +20,10 @@ pre-commit==3.6.0
 
 # Security scanning
 bandit==1.7.5
+pbr==6.1.0
+setuptools>=69.0.0
 
-# Database testing
-pytest-postgresql==5.0.0
+# Database testing helpers
 sqlalchemy-utils==0.41.1
 
 # Load testing

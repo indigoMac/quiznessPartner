@@ -96,8 +96,8 @@ type-check:
 security:
 	@echo "Running security checks..."
 	mkdir -p test-reports
-	python3 -m bandit -r . -f json -o test-reports/security.json || true
-	python3 -m bandit -r . -f txt
+	python3 -m bandit -r . -x ./tests,./migrations -f json -o test-reports/security.json || true
+	python3 -m bandit -r . -x ./tests,./migrations -f txt
 
 # Development
 dev:

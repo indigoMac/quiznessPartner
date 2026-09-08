@@ -5,9 +5,11 @@ import pytest
 
 from ai_utils import (
     DEFAULT_LLM_BASE_URL,
+    GeneratedQuiz,
     QuizGenerationError,
     _llm_base_url,
     _llm_model,
+    as_generated_quiz,
     extract_text_from_pdf,
     generate_quiz_from_text,
 )
@@ -30,11 +32,75 @@ class TestAIUtils:
             "France is a country in Europe. Paris is its capital."
         )
 
-        assert len(result) > 0
-        assert "question" in result[0]
-        assert "options" in result[0]
-        assert "correct_answer" in result[0]
+        assert len(result.questions) > 0
+        assert result.title == "What is the capital of France"
+        assert result.topic is None
+        assert "question" in result.questions[0]
+        assert "options" in result.questions[0]
+        assert "correct_answer" in result.questions[0]
         assert mock_openai.called
+
+    @patch("ai_utils._chat_completion")
+    def test_generate_quiz_uses_llm_title_and_topic(self, mock_openai):
+        mock_openai.return_value = json.dumps(
+            {
+                "title": "European Capitals",
+                "topic": "Geography",
+                "questions": [
+                    {
+                        "question": "What is the capital of France?",
+                        "options": ["Berlin", "Paris", "London", "Madrid"],
+                        "correct_answer": 1,
+                    }
+                ],
+            }
+        )
+
+        result = generate_quiz_from_text(
+            "France is a country in Europe. Paris is its capital."
+        )
+
+        assert result.title == "European Capitals"
+        assert result.topic == "Geography"
+        assert len(result.questions) == 1
+
+    @patch("ai_utils._chat_completion")
+    def test_generate_quiz_prefers_requested_topic(self, mock_openai):
+        mock_openai.return_value = json.dumps(
+            {
+                "title": "European Capitals",
+                "topic": "World Geography",
+                "questions": [
+                    {
+                        "question": "What is the capital of France?",
+                        "options": ["Berlin", "Paris", "London", "Madrid"],
+                        "correct_answer": 1,
+                    }
+                ],
+            }
+        )
+
+        result = generate_quiz_from_text(
+            "France is a country in Europe. Paris is its capital.",
+            topic="Geography",
+        )
+
+        assert result.title == "European Capitals"
+        assert result.topic == "Geography"
+
+    def test_as_generated_quiz_accepts_question_lists(self):
+        questions = [
+            {
+                "question": "What is 2+2?",
+                "options": ["3", "4", "5", "6"],
+                "correct_answer": 1,
+            }
+        ]
+        result = as_generated_quiz(questions, requested_topic="Math")
+        assert isinstance(result, GeneratedQuiz)
+        assert result.title == "Quiz on Math"
+        assert result.topic == "Math"
+        assert result.questions == questions
 
     @patch("ai_utils._chat_completion")
     def test_generate_quiz_json_error(self, mock_openai):

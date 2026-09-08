@@ -186,8 +186,11 @@ def test_ai_processing_performance_with_mock(mock_openai):
     processing_time = end_time - start_time
     # With mocked AI, this should be very fast
     assert processing_time < 0.1, f"AI processing took {processing_time:.3f}s"
-    assert len(result) == 2
-    assert all("question" in q and "options" in q and "correct_answer" in q for q in result)
+    assert len(result.questions) == 2
+    assert all(
+        "question" in q and "options" in q and "correct_answer" in q
+        for q in result.questions
+    )
 
 
 def test_text_chunking_with_various_sizes():

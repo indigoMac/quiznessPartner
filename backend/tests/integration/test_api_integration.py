@@ -8,6 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from ai_utils import GeneratedQuiz
 from auth.auth_utils import get_password_hash
 from db_utils import get_db
 from main import app
@@ -484,6 +485,35 @@ def test_generate_quiz_ai_failure_returns_bad_gateway(mock_generate_quiz, auth_t
     )
     assert response.status_code == 502
     assert "Quiz generation failed" in response.json()["detail"]
+
+
+@patch("main.generate_quiz_from_text")
+def test_generate_quiz_persists_generated_title(mock_generate_quiz, auth_token):
+    mock_generate_quiz.return_value = GeneratedQuiz(
+        title="European Capitals",
+        topic="Geography",
+        questions=[
+            {
+                "question": "What is the capital of France?",
+                "options": ["Berlin", "Paris", "London", "Madrid"],
+                "correct_answer": 1,
+            }
+        ],
+    )
+
+    response = client.post(
+        "/api/v1/generate-quiz",
+        headers=auth_token,
+        json={"content": "Test content", "num_questions": 1},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["title"] == "European Capitals"
+    assert data["topic"] == "Geography"
+
+    listed = client.get("/api/v1/quizzes", headers=auth_token).json()
+    assert listed["quizzes"][0]["title"] == "European Capitals"
+    assert listed["quizzes"][0]["topic"] == "Geography"
 
 
 @patch("main.generate_quiz_from_text")

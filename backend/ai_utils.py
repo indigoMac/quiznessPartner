@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import tempfile
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 import fitz  # PyMuPDF
@@ -22,6 +23,62 @@ GROQ_FALLBACK_MODELS = ("openai/gpt-oss-20b", "openai/gpt-oss-120b")
 
 class QuizGenerationError(Exception):
     """Raised when quiz generation fails and the caller should surface the error."""
+
+
+@dataclass
+class GeneratedQuiz:
+    title: str
+    topic: Optional[str]
+    questions: List[Dict[str, Any]]
+
+
+def _clean_label(value: Optional[str], max_len: int) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    cleaned = " ".join(value.strip().split())
+    return cleaned[:max_len] if cleaned else None
+
+
+def _title_from_questions(questions: List[Dict[str, Any]]) -> Optional[str]:
+    first = questions[0].get("question") if questions else None
+    if not isinstance(first, str) or not first.strip():
+        return None
+    snippet = " ".join(first.strip().rstrip("?").split()[:8]).strip()
+    return snippet or None
+
+
+def resolve_quiz_title(
+    generated_title: Optional[str],
+    topic: Optional[str],
+    questions: List[Dict[str, Any]],
+) -> str:
+    title = _clean_label(generated_title, 80)
+    if title:
+        return title
+    topic_label = _clean_label(topic, 60)
+    if topic_label:
+        return f"Quiz on {topic_label}"
+    snippet = _title_from_questions(questions)
+    if snippet:
+        return snippet
+    return "Untitled Quiz"
+
+
+def as_generated_quiz(
+    result: Any, requested_topic: Optional[str] = None
+) -> GeneratedQuiz:
+    """Normalize LLM output or test mocks into a GeneratedQuiz."""
+    if isinstance(result, GeneratedQuiz):
+        return result
+    if isinstance(result, list):
+        return GeneratedQuiz(
+            title=resolve_quiz_title(None, requested_topic, result),
+            topic=_clean_label(requested_topic, 60),
+            questions=result,
+        )
+    raise QuizGenerationError(
+        "Quiz generation returned invalid data. Please try again."
+    )
 
 
 def extract_text_from_pdf(pdf_file):
@@ -131,7 +188,7 @@ def _chat_completion(prompt: str) -> str:
 
 def generate_quiz_from_text(
     text: str, topic: Optional[str] = None, num_questions: int = 5
-) -> List[Dict[str, Any]]:
+) -> GeneratedQuiz:
     """Generate a quiz from text using the configured LLM provider.
 
     Defaults to Groq (OpenAI-compatible). Override with LLM_BASE_URL,
@@ -154,12 +211,15 @@ def generate_quiz_from_text(
 
     Text: {text}
 
-    Format your response as a valid JSON array with objects containing:
-    1. 'question': The question text
-    2. 'options': An array of 4 possible answers (as strings)
-    3. 'correct_answer': The index (0-3) of the correct answer in the options array
+    Format your response as a valid JSON object with:
+    1. 'title': a short specific quiz title (max 80 characters)
+    2. 'topic': a short topic label of 2-5 words
+    3. 'questions': an array of objects containing:
+       - 'question': The question text
+       - 'options': An array of 4 possible answers (as strings)
+       - 'correct_answer': The index (0-3) of the correct answer
 
-    ONLY return the JSON array, nothing else.
+    ONLY return the JSON object, nothing else.
     """
 
     try:
@@ -179,12 +239,25 @@ def generate_quiz_from_text(
     result = result.strip()
 
     try:
-        questions = json.loads(result)
+        payload = json.loads(result)
     except json.JSONDecodeError as exc:
         logger.error("Quiz generation returned invalid JSON: %s", result)
         raise QuizGenerationError(
             "Quiz generation returned invalid data. Please try again."
         ) from exc
+
+    generated_title = None
+    generated_topic = topic
+    if isinstance(payload, list):
+        questions = payload
+    elif isinstance(payload, dict):
+        questions = payload.get("questions")
+        generated_title = payload.get("title")
+        generated_topic = payload.get("topic") or topic
+    else:
+        raise QuizGenerationError(
+            "Quiz generation returned invalid data. Please try again."
+        )
 
     if not isinstance(questions, list) or not questions:
         raise QuizGenerationError(
@@ -209,4 +282,8 @@ def generate_quiz_from_text(
                     "Please try again."
                 ) from exc
 
-    return questions
+    return GeneratedQuiz(
+        title=resolve_quiz_title(generated_title, topic, questions),
+        topic=_clean_label(topic, 60) or _clean_label(generated_topic, 60),
+        questions=questions,
+    )

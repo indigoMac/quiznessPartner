@@ -1,1 +1,1 @@
-# Services package for QuizNess Professional Platform 
+# Services package for QuizNess Professional Platform

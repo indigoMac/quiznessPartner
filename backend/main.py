@@ -8,7 +8,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ai_utils import QuizGenerationError, extract_text_from_pdf, generate_quiz_from_text
+from ai_utils import (
+    QuizGenerationError,
+    as_generated_quiz,
+    extract_text_from_pdf,
+    generate_quiz_from_text,
+)
 from auth import auth_router
 from auth.dependencies import get_current_active_user, get_optional_user
 from db_utils import (
@@ -102,10 +107,6 @@ class QuizListResponse(BaseModel):
     completed: int
 
 
-def _quiz_title(topic: Optional[str]) -> str:
-    return f"Quiz on {topic}" if topic else "Untitled Quiz"
-
-
 def _serialize_created_at(value) -> Optional[str]:
     if value is None:
         return None
@@ -132,14 +133,17 @@ async def generate_quiz(
 ):
     """Generate a quiz from text content. Requires a logged-in user."""
     try:
-        questions_data = generate_quiz_from_text(
-            request.content, request.topic, request.num_questions
+        generated = as_generated_quiz(
+            generate_quiz_from_text(
+                request.content, request.topic, request.num_questions
+            ),
+            request.topic,
         )
 
         quiz = create_quiz(
-            db, _quiz_title(request.topic), request.topic, current_user.id
+            db, generated.title, generated.topic, current_user.id
         )
-        add_questions_to_quiz(db, quiz.id, questions_data)
+        add_questions_to_quiz(db, quiz.id, generated.questions)
         complete_quiz = get_quiz_with_questions(db, quiz.id)
 
         return QuizResponse(
@@ -184,9 +188,12 @@ async def upload_document(
                 detail="No text could be extracted from the file",
             )
 
-        questions_data = generate_quiz_from_text(text, topic, num_questions)
-        quiz = create_quiz(db, _quiz_title(topic), topic, current_user.id)
-        add_questions_to_quiz(db, quiz.id, questions_data)
+        generated = as_generated_quiz(
+            generate_quiz_from_text(text, topic, num_questions),
+            topic,
+        )
+        quiz = create_quiz(db, generated.title, generated.topic, current_user.id)
+        add_questions_to_quiz(db, quiz.id, generated.questions)
         complete_quiz = get_quiz_with_questions(db, quiz.id)
 
         return QuizResponse(
