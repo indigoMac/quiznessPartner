@@ -1,5 +1,5 @@
 import os
-from typing import Generator
+from typing import Generator, Optional
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, Engine
@@ -7,29 +7,34 @@ from sqlalchemy.orm import sessionmaker, Session
 
 load_dotenv()
 
-# Get environment (default to development)
-ENV = os.getenv("FASTAPI_ENV", "development")
+ENV = os.getenv("ENVIRONMENT") or os.getenv("FASTAPI_ENV") or "development"
+TESTING = os.getenv("TESTING", "0") == "1" or ENV == "test"
 
-# Check if we're in testing mode
-TESTING = os.getenv("TESTING", "0") == "1" or os.getenv("ENVIRONMENT") == "test"
 
-# Database URIs for different environments
-DATABASE_URLS = {
-    # Use Docker PostgreSQL for development
-    "development": "postgresql://postgres:postgres@localhost:5432/quizness",
-    # Use PostgreSQL for tests (will be overridden by conftest.py anyway)
-    "test": "postgresql://postgres:postgres@localhost:5432/quizness_test",
-    "production": os.getenv("DATABASE_URL"),  # For production (e.g., Heroku)
-}
+def resolve_database_uri(raw: Optional[str] = None) -> str:
+    """Normalize a Postgres URL for SQLAlchemy, including Neon/Railway values."""
+    uri = raw
+    if uri is None:
+        uri = os.getenv("DATABASE_URI") or os.getenv("DATABASE_URL")
+    if not uri:
+        defaults = {
+            "development": "postgresql://postgres:postgres@localhost:5432/quizness",
+            "test": "postgresql://postgres:postgres@localhost:5432/quizness_test",
+        }
+        uri = defaults.get(ENV, defaults["development"])
 
-# Get the appropriate database URL
-DATABASE_URI = os.getenv("DATABASE_URI", DATABASE_URLS[ENV])
+    uri = uri.replace("postgres://", "postgresql://", 1)
 
-# For Heroku PostgreSQL which uses DATABASE_URL
-if os.getenv("DATABASE_URL"):
-    DATABASE_URI = os.getenv("DATABASE_URL").replace("postgres://", "postgresql://")
+    needs_ssl = "neon.tech" in uri or ENV == "production"
+    if needs_ssl and "sslmode=" not in uri:
+        separator = "&" if "?" in uri else "?"
+        uri = f"{uri}{separator}sslmode=require"
 
-# Global variables for lazy initialization
+    return uri
+
+
+DATABASE_URI = resolve_database_uri()
+
 engine: Engine = None
 SessionLocal = None
 
@@ -38,24 +43,21 @@ def get_engine() -> Engine:
     """Get database engine with lazy initialization."""
     global engine
     if engine is None:
-        print(f"Initializing database connection: {DATABASE_URI}")
+        uri = resolve_database_uri()
+        print("Initializing database connection")
 
-        if TESTING:
-            # For PostgreSQL in CI/testing, add connection timeout and pooling
-            connect_args = {}
-            if DATABASE_URI.startswith("postgresql"):
-                connect_args = {"connect_timeout": 5}
+        connect_args = {}
+        if uri.startswith("postgresql"):
+            connect_args["connect_timeout"] = 5
 
-            engine = create_engine(
-                DATABASE_URI,
-                pool_timeout=5,
-                pool_recycle=300,
-                pool_pre_ping=True,  # Verify connections before use
-                connect_args=connect_args,
-                echo=False
-            )
-        else:
-            engine = create_engine(DATABASE_URI)
+        engine = create_engine(
+            uri,
+            pool_timeout=30,
+            pool_recycle=300,
+            pool_pre_ping=True,
+            connect_args=connect_args,
+            echo=False,
+        )
 
     return engine
 

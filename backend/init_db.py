@@ -1,6 +1,5 @@
-from db import engine
+from db import get_engine
 from models.base import Base
-# Import models to register them with SQLAlchemy metadata
 from models.question import Question  # noqa: F401
 from models.quiz import Quiz  # noqa: F401
 from models.result import Result  # noqa: F401
@@ -10,7 +9,7 @@ from models.user import User  # noqa: F401
 def init_db():
     """Initialize the database by creating all tables."""
     print("Creating database tables...")
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=get_engine())
     print("Database tables created successfully!")
 
 

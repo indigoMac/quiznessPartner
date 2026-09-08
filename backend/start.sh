@@ -1,10 +1,15 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-# Initialize the database using SQLAlchemy
-echo "Initializing database..."
-python init_db.py
+PORT="${PORT:-8000}"
+ENVIRONMENT="${ENVIRONMENT:-${FASTAPI_ENV:-development}}"
 
-# Start the application
-echo "Starting the application..."
-exec uvicorn main:app --host 0.0.0.0 --port 8000 --reload 
+echo "Running database migrations..."
+python -m alembic upgrade head
+
+echo "Starting QuizNess API on port ${PORT}..."
+if [ "${ENVIRONMENT}" = "production" ]; then
+  exec uvicorn main:app --host 0.0.0.0 --port "${PORT}"
+fi
+
+exec uvicorn main:app --host 0.0.0.0 --port "${PORT}" --reload

@@ -23,6 +23,11 @@ from models.user import User
 
 load_dotenv()
 
+if os.getenv("ENVIRONMENT") == "production":
+    secret_key = os.getenv("SECRET_KEY", "")
+    if not secret_key or secret_key == "your-secret-key-here":
+        raise RuntimeError("SECRET_KEY must be set to a strong value in production")
+
 
 def _cors_origins() -> List[str]:
     raw = os.getenv("BACKEND_CORS_ORIGINS", '["http://localhost:3000"]')
@@ -43,9 +48,11 @@ app = FastAPI(
 )
 
 cors_origins = _cors_origins()
+cors_origin_regex = os.getenv("BACKEND_CORS_ORIGIN_REGEX", r"https://.*\.vercel\.app")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
+    allow_origin_regex=cors_origin_regex,
     allow_credentials="*" not in cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
