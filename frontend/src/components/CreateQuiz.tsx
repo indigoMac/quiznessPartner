@@ -16,22 +16,28 @@ type TabType = "upload" | "text" | "url";
 
 interface TabProps {
   label: string;
+  shortLabel: string;
   active: boolean;
   onClick: () => void;
 }
 
-const Tab: React.FC<TabProps> = ({ label, active, onClick }) => (
+const Tab: React.FC<TabProps> = ({ label, shortLabel, active, onClick }) => (
   <button
-    className={`px-4 py-2 font-medium rounded-lg transition-colors duration-200
+    type="button"
+    role="tab"
+    aria-label={label}
+    aria-selected={active}
+    className={`min-h-11 flex-1 px-2 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors duration-200
       ${
         active
-          ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300"
-          : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
+          ? "bg-white text-stone-900 shadow-sm dark:bg-stone-700 dark:text-white"
+          : "text-stone-600 hover:text-stone-900 dark:text-stone-400 dark:hover:text-stone-200"
       }
     `}
     onClick={onClick}
   >
-    {label}
+    <span className="sm:hidden">{shortLabel}</span>
+    <span className="hidden sm:inline">{label}</span>
   </button>
 );
 
@@ -176,30 +182,38 @@ export default function CreateQuiz() {
 
   return (
     <div className="max-w-3xl mx-auto animate-slide-up">
-      <h1 className="text-3xl font-bold mb-8">Create New Quiz</h1>
+      <p className="page-kicker mb-2">New quiz</p>
+      <h1 className="page-title mb-6 text-3xl">Create New Quiz</h1>
 
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-        <div className="mb-6">
-          <div className="flex flex-wrap gap-2 mb-6">
+      <div className="card p-5 sm:p-6">
+        <div className="mb-2">
+          <div
+            className="grid grid-cols-3 gap-1 p-1 mb-6 rounded-xl bg-stone-100 dark:bg-stone-800"
+            role="tablist"
+            aria-label="Quiz source"
+          >
             <Tab
               label="Upload Document"
+              shortLabel="Upload"
               active={activeTab === "upload"}
               onClick={() => handleTabChange("upload")}
             />
             <Tab
               label="Enter Text"
+              shortLabel="Text"
               active={activeTab === "text"}
               onClick={() => handleTabChange("text")}
             />
             <Tab
               label="From URL"
+              shortLabel="URL"
               active={activeTab === "url"}
               onClick={() => handleTabChange("url")}
             />
           </div>
 
           {error && (
-            <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/30 border-l-4 border-red-500 text-red-700 dark:text-red-400 rounded shadow-sm">
+            <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/30 border-l-4 border-red-500 text-red-700 dark:text-red-400 rounded-xl">
               <div className="flex">
                 <svg
                   className="h-5 w-5 mr-3 text-red-500"
@@ -279,7 +293,7 @@ export default function CreateQuiz() {
                     }
                     placeholder="https://example.com/article"
                   />
-                  <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                  <p className="mt-2 text-sm text-stone-500 dark:text-stone-400">
                     Public articles and PDF links work. Pages that need a login
                     usually cannot be imported.
                   </p>

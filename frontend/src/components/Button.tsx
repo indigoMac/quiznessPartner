@@ -1,6 +1,5 @@
 import React from "react";
 
-// Define button variants
 type ButtonVariant = "primary" | "secondary" | "outline" | "danger" | "success";
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -23,61 +22,49 @@ const Button: React.FC<ButtonProps> = ({
   icon,
   ...props
 }) => {
-  // Base button styles
   const baseStyles = `
-    inline-flex items-center justify-center font-medium transition-all duration-200
-    focus:outline-none focus:ring-2 focus:ring-offset-2 
-    rounded-lg transform hover:-translate-y-0.5 active:translate-y-0
+    inline-flex items-center justify-center font-semibold
+    focus:outline-none focus:ring-2 focus:ring-offset-2
+    rounded-xl transition-colors duration-150
   `;
 
-  // Size styles
   const sizeStyles = {
-    sm: "px-3 py-1.5 text-sm",
-    md: "px-4 py-2.5",
-    lg: "px-6 py-3 text-lg",
+    sm: "min-h-10 px-3 py-2 text-sm",
+    md: "min-h-11 px-4 py-2.5 text-sm",
+    lg: "min-h-12 px-6 py-3 text-base",
   };
 
-  // Variant-specific styles
   const variantStyles = {
-    primary: `bg-gradient-to-r from-indigo-600 to-purple-600 text-white 
-              hover:from-indigo-700 hover:to-purple-700 
-              dark:from-indigo-500 dark:to-purple-500 
-              dark:hover:from-indigo-600 dark:hover:to-purple-600 
-              focus:ring-indigo-500`,
-    secondary: `bg-gray-200 text-gray-800 hover:bg-gray-300 
-                dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 
-                focus:ring-gray-500`,
-    outline: `border border-gray-300 text-gray-700 hover:bg-gray-50 
-              dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800 
-              focus:ring-indigo-500`,
-    danger: `bg-gradient-to-r from-red-500 to-pink-500 text-white 
-             hover:from-red-600 hover:to-pink-600 
-             dark:from-red-600 dark:to-pink-600 
-             dark:hover:from-red-700 dark:hover:to-pink-700 
-             focus:ring-red-500`,
-    success: `bg-gradient-to-r from-green-500 to-teal-500 text-white 
-              hover:from-green-600 hover:to-teal-600 
-              dark:from-green-600 dark:to-teal-600 
-              dark:hover:from-green-700 dark:hover:to-teal-700 
-              focus:ring-green-500`,
+    primary: `bg-teal-800 text-white hover:bg-teal-900
+              dark:bg-teal-700 dark:hover:bg-teal-600
+              focus:ring-teal-700`,
+    secondary: `bg-stone-200 text-stone-800 hover:bg-stone-300
+                dark:bg-stone-700 dark:text-stone-100 dark:hover:bg-stone-600
+                focus:ring-stone-500`,
+    outline: `border border-stone-300 text-stone-800 bg-white hover:bg-stone-50
+              dark:border-stone-600 dark:text-stone-200 dark:bg-transparent dark:hover:bg-stone-800
+              focus:ring-teal-700`,
+    danger: `bg-red-700 text-white hover:bg-red-800
+             dark:bg-red-700 dark:hover:bg-red-600
+             focus:ring-red-600`,
+    success: `bg-teal-700 text-white hover:bg-teal-800
+              dark:bg-teal-600 dark:hover:bg-teal-500
+              focus:ring-teal-700`,
   };
 
-  // Loading and disabled styles
   const loadingStyles = isLoading ? "opacity-80 cursor-wait" : "";
-  const disabledStyles = disabled
-    ? "opacity-60 cursor-not-allowed transform-none hover:translate-y-0"
-    : "";
+  const disabledStyles = disabled ? "opacity-60 cursor-not-allowed" : "";
   const widthStyles = fullWidth ? "w-full" : "";
 
   return (
     <button
       className={`
-        ${baseStyles} 
-        ${sizeStyles[size]} 
-        ${variantStyles[variant]} 
-        ${loadingStyles} 
-        ${disabledStyles} 
-        ${widthStyles} 
+        ${baseStyles}
+        ${sizeStyles[size]}
+        ${variantStyles[variant]}
+        ${loadingStyles}
+        ${disabledStyles}
+        ${widthStyles}
         ${className}
       `}
       disabled={isLoading || disabled}

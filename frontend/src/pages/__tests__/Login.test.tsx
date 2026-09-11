@@ -14,6 +14,13 @@ vi.mock("../../context/AuthContext", () => ({
 vi.mock("react-router-dom", () => ({
   useNavigate: vi.fn(),
   useLocation: () => ({ state: null }),
+  Link: ({
+    children,
+    to,
+  }: {
+    children: React.ReactNode;
+    to: string;
+  }) => <a href={to}>{children}</a>,
   BrowserRouter: ({ children }: { children: React.ReactNode }) => (
     <div>{children}</div>
   ),

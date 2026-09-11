@@ -61,13 +61,19 @@ describe("CreateQuiz", () => {
     render(<CreateQuiz />, { wrapper });
 
     // Should start with upload mode
-    expect(screen.getByText("Upload Document")).toHaveClass("bg-indigo-100");
+    expect(screen.getByRole("tab", { name: "Upload Document" })).toHaveAttribute(
+      "aria-selected",
+      "true"
+    );
 
     // Switch to text mode
     await act(async () => {
       await user.click(screen.getByText("Enter Text"));
     });
-    expect(screen.getByText("Enter Text")).toHaveClass("bg-indigo-100");
+    expect(screen.getByRole("tab", { name: "Enter Text" })).toHaveAttribute(
+      "aria-selected",
+      "true"
+    );
   });
 
   it("shows validation error when trying to submit without file", async () => {

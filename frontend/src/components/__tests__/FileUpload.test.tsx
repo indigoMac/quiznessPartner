@@ -122,11 +122,11 @@ describe("FileUpload Component", () => {
 
     // Test dragenter
     fireEvent.dragEnter(dropzone);
-    expect(dropzone).toHaveClass("border-blue-500");
+    expect(dropzone).toHaveClass("border-teal-700");
 
     // Test dragleave
     fireEvent.dragLeave(dropzone);
-    expect(dropzone).not.toHaveClass("border-blue-500");
+    expect(dropzone).not.toHaveClass("border-teal-700");
   });
 
   it("handles file drop", () => {

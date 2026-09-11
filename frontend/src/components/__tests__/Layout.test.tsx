@@ -41,9 +41,8 @@ describe("Layout", () => {
       { wrapper }
     );
 
-    const logo = screen.getByRole("heading", {
-      name: (content) =>
-        content.includes("Quizness") && content.includes("Partner"),
+    const logo = screen.getByRole("link", {
+      name: /quizness partner/i,
     });
     expect(logo).toBeInTheDocument();
   });
@@ -138,5 +137,28 @@ describe("Layout", () => {
     const dashboardLink = screen.getByRole("link", { name: /dashboard/i });
     await user.click(dashboardLink);
     expect(window.location.pathname).toBe("/dashboard");
+  });
+
+  it("opens a mobile menu with navigation links", async () => {
+    const user = userEvent.setup();
+    render(
+      <Layout>
+        <div>Test Content</div>
+      </Layout>,
+      { wrapper }
+    );
+
+    expect(
+      screen.queryByRole("navigation", { name: /mobile/i })
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /open menu/i }));
+
+    expect(
+      screen.getByRole("navigation", { name: /mobile/i })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("navigation", { name: /mobile/i })
+    ).toHaveTextContent("Login");
   });
 });

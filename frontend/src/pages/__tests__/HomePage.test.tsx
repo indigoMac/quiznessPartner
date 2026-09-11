@@ -36,10 +36,12 @@ describe("HomePage", () => {
   it("renders welcome message", () => {
     render(<HomePage />, { wrapper });
 
-    expect(screen.getByText("Welcome to Quizness Partner")).toBeInTheDocument();
+    expect(
+      screen.getByText("Turn notes into quizzes you'll actually finish")
+    ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Create engaging quizzes from your documents or text with AI assistance"
+        "Upload a PDF, paste text, or drop a link. Quizness Partner builds questions you can practice on your phone."
       )
     ).toBeInTheDocument();
   });

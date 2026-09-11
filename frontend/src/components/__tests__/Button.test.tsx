@@ -12,22 +12,20 @@ describe("Button Component", () => {
   it("applies the correct variant classes", () => {
     const { rerender } = render(<Button variant="primary">Primary</Button>);
     const button = screen.getByRole("button");
-    expect(button).toHaveClass("from-indigo-600");
-    expect(button).toHaveClass("to-purple-600");
+    expect(button).toHaveClass("bg-teal-800");
 
     rerender(<Button variant="secondary">Secondary</Button>);
     const secondaryButton = screen.getByRole("button");
-    expect(secondaryButton).toHaveClass("bg-gray-200");
+    expect(secondaryButton).toHaveClass("bg-stone-200");
 
     rerender(<Button variant="outline">Outline</Button>);
     const outlineButton = screen.getByRole("button");
     expect(outlineButton).toHaveClass("border");
-    expect(outlineButton).toHaveClass("border-gray-300");
+    expect(outlineButton).toHaveClass("border-stone-300");
 
     rerender(<Button variant="danger">Danger</Button>);
     const dangerButton = screen.getByRole("button");
-    expect(dangerButton).toHaveClass("from-red-500");
-    expect(dangerButton).toHaveClass("to-pink-500");
+    expect(dangerButton).toHaveClass("bg-red-700");
   });
 
   it("disables the button when isLoading is true", () => {

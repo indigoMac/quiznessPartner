@@ -38,17 +38,16 @@ describe("QuizQuestion Component", () => {
     const onSelectAnswer = vi.fn();
     render(<QuizQuestion {...defaultProps} onSelectAnswer={onSelectAnswer} />);
 
-    fireEvent.click(screen.getByText("Paris").closest("div")!.parentElement!);
+    fireEvent.click(screen.getByRole("button", { name: /paris/i }));
     expect(onSelectAnswer).toHaveBeenCalledWith(2);
   });
 
   it("highlights the selected answer", () => {
     render(<QuizQuestion {...defaultProps} selectedAnswer={2} />);
 
-    // Find the option div that contains Paris
-    const parisOption = screen.getByText("Paris").closest("div")!.parentElement!
-      .parentElement!;
-    expect(parisOption).toHaveClass("border-indigo-500");
+    expect(screen.getByRole("button", { name: /paris/i })).toHaveClass(
+      "border-teal-700"
+    );
   });
 
   it("does not call onSelectAnswer when showResults is true", () => {
@@ -61,7 +60,7 @@ describe("QuizQuestion Component", () => {
       />
     );
 
-    fireEvent.click(screen.getByText("Paris").closest("div")!.parentElement!);
+    fireEvent.click(screen.getByRole("button", { name: /paris/i }));
     expect(onSelectAnswer).not.toHaveBeenCalled();
   });
 
@@ -86,9 +85,7 @@ describe("QuizQuestion Component", () => {
   it("highlights correct answer in green when showResults is true", () => {
     render(<QuizQuestion {...defaultProps} showResults={true} />);
 
-    // Find the option div that contains Paris
-    const parisOption = screen.getByText("Paris").closest("div")!.parentElement!
-      .parentElement!;
+    const parisOption = screen.getByRole("button", { name: /paris/i });
     expect(parisOption).toHaveClass("border-green-500");
   });
 
@@ -101,9 +98,7 @@ describe("QuizQuestion Component", () => {
       />
     );
 
-    // Find the option div that contains London
-    const londonOption = screen.getByText("London").closest("div")!
-      .parentElement!.parentElement!;
+    const londonOption = screen.getByRole("button", { name: /london/i });
     expect(londonOption).toHaveClass("border-red-500");
   });
 

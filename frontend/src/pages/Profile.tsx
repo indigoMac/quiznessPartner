@@ -13,16 +13,19 @@ export default function Profile() {
   const { user, logout } = useAuth();
 
   return (
-    <div className="max-w-xl mx-auto">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 space-y-6">
-        <h1 className="text-2xl font-bold">Profile</h1>
+    <div className="mx-auto max-w-xl">
+      <div className="card p-5 sm:p-6 space-y-6">
+        <div>
+          <p className="page-kicker mb-2">Account</p>
+          <h1 className="page-title text-2xl sm:text-3xl">Profile</h1>
+        </div>
         <dl className="space-y-4">
           <div>
-            <dt className="text-sm text-gray-500 dark:text-gray-400">Email</dt>
-            <dd className="text-lg font-medium">{user?.email}</dd>
+            <dt className="text-sm text-stone-500 dark:text-stone-400">Email</dt>
+            <dd className="text-lg font-medium break-all">{user?.email}</dd>
           </div>
           <div>
-            <dt className="text-sm text-gray-500 dark:text-gray-400">
+            <dt className="text-sm text-stone-500 dark:text-stone-400">
               Member since
             </dt>
             <dd className="text-lg font-medium">
@@ -30,17 +33,19 @@ export default function Profile() {
             </dd>
           </div>
           <div>
-            <dt className="text-sm text-gray-500 dark:text-gray-400">Status</dt>
+            <dt className="text-sm text-stone-500 dark:text-stone-400">Status</dt>
             <dd className="text-lg font-medium">
               {user?.is_active === false ? "Inactive" : "Active"}
             </dd>
           </div>
         </dl>
-        <div className="flex flex-col sm:flex-row gap-3">
-          <Link to="/dashboard">
-            <Button variant="secondary">Back to dashboard</Button>
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <Link to="/dashboard" className="w-full sm:w-auto">
+            <Button variant="secondary" className="w-full sm:w-auto">
+              Back to dashboard
+            </Button>
           </Link>
-          <Button variant="secondary" onClick={logout}>
+          <Button variant="outline" onClick={logout} className="w-full sm:w-auto">
             Log out
           </Button>
         </div>

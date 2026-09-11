@@ -8,25 +8,40 @@
   }
 
   body {
-    @apply bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100;
+    @apply bg-paper text-ink font-sans dark:bg-paper-dark dark:text-stone-100;
     margin: 0;
     min-width: 320px;
     min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-teal-700 ring-offset-2 ring-offset-paper dark:ring-offset-paper-dark;
   }
 }
 
 @layer components {
   .btn-primary {
-    @apply inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500;
+    @apply inline-flex min-h-11 items-center justify-center px-4 py-2.5 border border-transparent text-sm font-semibold rounded-xl text-white bg-teal-800 hover:bg-teal-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-700;
   }
 
   .btn-secondary {
-    @apply inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500;
+    @apply inline-flex min-h-11 items-center justify-center px-4 py-2.5 border border-stone-300 text-sm font-semibold rounded-xl text-stone-800 bg-white hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-700;
   }
 
   .input-primary {
-    @apply block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm;
+    @apply block w-full min-h-11 rounded-xl border-stone-300 shadow-sm focus:border-teal-700 focus:ring-teal-700 sm:text-sm;
+  }
+
+  .card {
+    @apply bg-white dark:bg-stone-900 rounded-2xl border border-stone-200/90 dark:border-stone-800 shadow-soft;
+  }
+
+  .page-kicker {
+    @apply text-xs font-semibold uppercase tracking-[0.18em] text-teal-800 dark:text-teal-400;
+  }
+
+  .page-title {
+    @apply font-display text-3xl sm:text-4xl font-semibold tracking-tight text-stone-900 dark:text-stone-50;
   }
 }
-
-/* Remove all other default styles as they are handled by Tailwind */

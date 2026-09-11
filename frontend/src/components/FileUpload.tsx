@@ -102,17 +102,17 @@ const FileUpload: FC<FileUploadProps> = ({
       {label && (
         <label
           htmlFor={inputId}
-          className="block text-sm font-medium text-gray-700 mb-1"
+          className="block text-sm font-medium text-stone-700 dark:text-stone-300 mb-1.5"
         >
           {label}
         </label>
       )}
       <div
         className={`
-          border-2 border-dashed rounded-md p-6 flex flex-col items-center justify-center
-          ${dragActive ? "border-blue-500 bg-blue-50" : "border-gray-300"}
-          ${error || fileError ? "border-red-500 bg-red-50" : ""}
-          ${selectedFile ? "border-green-500 bg-green-50" : ""}
+          border-2 border-dashed rounded-2xl p-6 sm:p-8 flex flex-col items-center justify-center min-h-[12rem]
+          ${dragActive ? "border-teal-700 bg-teal-50 dark:bg-teal-950/40" : "border-stone-300 dark:border-stone-600"}
+          ${error || fileError ? "border-red-500 bg-red-50 dark:bg-red-950/30" : ""}
+          ${selectedFile ? "border-teal-700 bg-teal-50 dark:bg-teal-950/30" : ""}
         `}
         onDragEnter={handleDrag}
         onDragOver={handleDrag}
@@ -132,7 +132,7 @@ const FileUpload: FC<FileUploadProps> = ({
         {selectedFile ? (
           <div className="text-center">
             <svg
-              className="mx-auto h-12 w-12 text-green-500"
+              className="mx-auto h-12 w-12 text-teal-700 dark:text-teal-400"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -145,7 +145,7 @@ const FileUpload: FC<FileUploadProps> = ({
                 d="M5 13l4 4L19 7"
               />
             </svg>
-            <p className="mt-2 text-sm text-gray-700">
+            <p className="mt-2 text-sm text-stone-700 dark:text-stone-300">
               Selected: {selectedFile.name}
             </p>
             <Button
@@ -173,10 +173,10 @@ const FileUpload: FC<FileUploadProps> = ({
                 d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
               />
             </svg>
-            <p className="mt-2 text-sm text-gray-600">
+            <p className="mt-2 text-sm text-stone-600 dark:text-stone-300">
               Drag and drop a file here, or click to select a file
             </p>
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
               {`Max file size: ${maxSize}MB. Accepted formats: ${accept}`}
             </p>
             <Button

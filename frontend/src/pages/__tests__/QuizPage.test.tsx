@@ -122,7 +122,7 @@ describe("QuizPage", () => {
     const parisOption = screen.getByText("Paris");
     await user.click(parisOption);
 
-    expect(parisOption.closest("button")).toHaveClass("bg-indigo-50");
+    expect(parisOption.closest("button")).toHaveClass("bg-teal-50");
   });
 
   it("enables submit button when all questions are answered", async () => {

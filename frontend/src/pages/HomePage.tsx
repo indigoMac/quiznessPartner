@@ -8,36 +8,42 @@ export default function HomePage() {
 
   return (
     <div>
-      <div className="max-w-4xl mx-auto text-center mb-8">
-        <h1 className="text-4xl font-bold mb-4 bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
-          Welcome to Quizness Partner
-        </h1>
-        <p className="text-xl text-gray-600 dark:text-gray-300">
-          Create engaging quizzes from your documents or text with AI assistance
-        </p>
-      </div>
+      {!user && !isLoading && (
+        <div className="mx-auto mb-8 max-w-3xl text-center sm:mb-10">
+          <p className="page-kicker mb-3">AI study partner</p>
+          <h1 className="page-title mb-4">
+            Turn notes into quizzes you'll actually finish
+          </h1>
+          <p className="mx-auto max-w-2xl text-lg text-stone-600 dark:text-stone-300">
+            Upload a PDF, paste text, or drop a link. Quizness Partner builds
+            questions you can practice on your phone.
+          </p>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex justify-center py-12">
           <div
             data-testid="loading-spinner"
-            className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"
+            className="h-12 w-12 animate-spin rounded-full border-t-2 border-b-2 border-teal-700"
           ></div>
         </div>
       ) : user ? (
         <CreateQuiz />
       ) : (
-        <div className="max-w-xl mx-auto bg-white dark:bg-gray-800 rounded-lg shadow-md p-8 text-center">
-          <h2 className="text-2xl font-semibold mb-3">Sign in to create quizzes</h2>
-          <p className="text-gray-600 dark:text-gray-300 mb-6">
+        <div className="card mx-auto max-w-xl p-6 text-center sm:p-8">
+          <h2 className="font-display text-2xl font-semibold mb-3">
+            Sign in to create quizzes
+          </h2>
+          <p className="mb-6 text-stone-600 dark:text-stone-300">
             Create an account to generate quizzes from PDFs or text, save them,
             and track your results.
           </p>
-          <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <Link to="/register">
+          <div className="flex flex-col justify-center gap-3 sm:flex-row">
+            <Link to="/register" className="w-full sm:w-auto">
               <Button className="w-full sm:w-auto">Create an account</Button>
             </Link>
-            <Link to="/login">
+            <Link to="/login" className="w-full sm:w-auto">
               <Button variant="secondary" className="w-full sm:w-auto">
                 Log in
               </Button>

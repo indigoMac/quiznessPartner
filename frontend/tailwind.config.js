@@ -5,22 +5,34 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: {
-          50: "#f0f9ff",
-          100: "#e0f2fe",
-          200: "#bae6fd",
-          300: "#7dd3fc",
-          400: "#38bdf8",
-          500: "#0ea5e9",
-          600: "#0284c7",
-          700: "#0369a1",
-          800: "#075985",
-          900: "#0c4a6e",
+        paper: {
+          DEFAULT: "#f7f4ef",
+          dark: "#141210",
         },
+        ink: {
+          DEFAULT: "#1c1917",
+          muted: "#57534e",
+        },
+        primary: {
+          50: "#f0fdfa",
+          100: "#ccfbf1",
+          200: "#99f6e4",
+          300: "#5eead4",
+          400: "#2dd4bf",
+          500: "#14b8a6",
+          600: "#0d9488",
+          700: "#0f766e",
+          800: "#115e59",
+          900: "#134e4a",
+        },
+      },
+      fontFamily: {
+        sans: ['"Source Sans 3"', "ui-sans-serif", "system-ui", "sans-serif"],
+        display: ["Fraunces", "ui-serif", "Georgia", "serif"],
       },
       borderRadius: {
         xl: "0.75rem",
-        "2xl": "1rem",
+        "2xl": "1.25rem",
       },
       animation: {
         "bounce-slow": "bounce 3s infinite",
@@ -39,7 +51,7 @@ export default {
         },
       },
       boxShadow: {
-        soft: "0 2px 15px -3px rgba(0, 0, 0, 0.07), 0 10px 20px -2px rgba(0, 0, 0, 0.04)",
+        soft: "0 1px 2px rgba(28, 25, 23, 0.04), 0 12px 32px -16px rgba(28, 25, 23, 0.18)",
         "inner-soft": "inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)",
       },
       typography: {
@@ -52,7 +64,7 @@ export default {
               fontWeight: 500,
               textDecoration: "underline",
               "&:hover": {
-                color: "#6366f1",
+                color: "#0f766e",
               },
             },
           },

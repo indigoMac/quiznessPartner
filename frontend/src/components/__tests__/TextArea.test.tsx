@@ -80,10 +80,10 @@ describe("TextArea Component", () => {
     expect(ref.current?.tagName).toBe("TEXTAREA");
   });
 
-  it("has resize-none class by default", () => {
+  it("allows vertical resize by default", () => {
     render(<TextArea placeholder="Enter text" />);
     const textarea = screen.getByPlaceholderText("Enter text");
-    expect(textarea).toHaveClass("resize-none");
+    expect(textarea).toHaveClass("resize-y");
   });
 
   it("has default rows set to 5", () => {

@@ -18,7 +18,7 @@ const QuizQuestion: FC<QuizQuestionProps> = ({
 }) => {
   const getOptionClasses = (index: number): string => {
     const baseClasses =
-      "border rounded-lg p-4 mb-3 transition-all duration-200 cursor-pointer hover:shadow-md";
+      "w-full min-h-[52px] border rounded-xl p-4 mb-3 transition-colors duration-150 cursor-pointer text-left";
 
     if (selectedAnswer === index) {
       if (showResults) {
@@ -28,19 +28,19 @@ const QuizQuestion: FC<QuizQuestionProps> = ({
           return `${baseClasses} border-red-500 bg-red-50 dark:bg-red-900/20 dark:border-red-600`;
         }
       } else {
-        return `${baseClasses} border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 dark:border-indigo-600`;
+        return `${baseClasses} border-teal-700 bg-teal-50 dark:bg-teal-950/40 dark:border-teal-500`;
       }
     } else if (showResults && index === question.correct_answer) {
       return `${baseClasses} border-green-500 bg-green-50 dark:bg-green-900/20 dark:border-green-600`;
     }
 
-    return `${baseClasses} border-gray-200 dark:border-gray-700 dark:bg-gray-800/50 hover:bg-gray-50 dark:hover:bg-gray-800`;
+    return `${baseClasses} border-stone-200 dark:border-stone-700 dark:bg-stone-900/40 hover:bg-stone-50 dark:hover:bg-stone-800`;
   };
 
   return (
     <div className="mb-8">
-      <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-        <span className="text-indigo-600 dark:text-indigo-400 font-bold">
+      <h3 className="text-lg font-medium text-stone-900 dark:text-white mb-4">
+        <span className="text-teal-800 dark:text-teal-400 font-semibold">
           {questionNumber}.
         </span>{" "}
         {question.question}
@@ -57,26 +57,28 @@ const QuizQuestion: FC<QuizQuestionProps> = ({
             <div className="flex items-start">
               <div className="flex-shrink-0 mt-0.5">
                 <div
-                  className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all duration-200
+                  className={`w-7 h-7 rounded-full border flex items-center justify-center text-xs font-semibold transition-all duration-200
                   ${
                     selectedAnswer === index
                       ? showResults
                         ? index === question.correct_answer
-                          ? "border-green-500 bg-green-500 dark:border-green-400 dark:bg-green-400"
-                          : "border-red-500 bg-red-500 dark:border-red-400 dark:bg-red-400"
-                        : "border-indigo-500 bg-indigo-500 dark:border-indigo-400 dark:bg-indigo-400"
-                      : "border-gray-300 dark:border-gray-600"
+                          ? "border-green-500 bg-green-500 text-white dark:border-green-400 dark:bg-green-400"
+                          : "border-red-500 bg-red-500 text-white dark:border-red-400 dark:bg-red-400"
+                        : "border-teal-700 bg-teal-800 text-white dark:border-teal-400 dark:bg-teal-500"
+                      : "border-stone-300 text-stone-500 dark:border-stone-600"
                   }`}
                 >
-                  {selectedAnswer === index && (
+                  {selectedAnswer === index ? (
                     <span className="text-white dark:text-white text-xs">
                       ✓
                     </span>
+                  ) : (
+                    String.fromCharCode(65 + index)
                   )}
                 </div>
               </div>
               <div className="ml-3 flex-grow text-left">
-                <p className="text-base text-gray-700 dark:text-gray-300">
+                <p className="text-base text-stone-700 dark:text-stone-300">
                   {option}
                 </p>
               </div>

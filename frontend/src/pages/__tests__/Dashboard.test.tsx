@@ -40,7 +40,8 @@ const wrapper = ({ children }: { children: React.ReactNode }) => (
 describe("Dashboard", () => {
   it("renders welcome message with user email", () => {
     render(<Dashboard />, { wrapper });
-    expect(screen.getByText(/welcome, test@example.com!/i)).toBeInTheDocument();
+    expect(screen.getByText(/welcome back/i)).toBeInTheDocument();
+    expect(screen.getByText(/signed in as test@example.com/i)).toBeInTheDocument();
   });
 
   it("renders create quiz button", () => {

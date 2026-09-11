@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { register } from "../api/auth";
 import Input from "../components/Input";
 import Button from "../components/Button";
@@ -36,58 +36,62 @@ export default function Register() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Create your account
-          </h2>
-        </div>
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+    <div className="mx-auto w-full max-w-md">
+      <div className="card p-6 sm:p-8">
+        <p className="page-kicker mb-2">Get started</p>
+        <h2 className="font-display text-3xl font-semibold text-stone-900 dark:text-white">
+          Create your account
+        </h2>
+        <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
           {error && (
-            <div className="rounded-md bg-red-50 p-4">
-              <div className="text-sm text-red-700">{error}</div>
+            <div className="rounded-xl bg-red-50 dark:bg-red-900/30 p-4">
+              <div className="text-sm text-red-700 dark:text-red-400">{error}</div>
             </div>
           )}
-          <div className="rounded-md shadow-sm -space-y-px">
-            <Input
-              id="email"
-              name="email"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Email address"
-              className="rounded-t-md"
-            />
-            <Input
-              id="password"
-              name="password"
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Password"
-              className=""
-            />
-            <Input
-              id="confirm-password"
-              name="confirm-password"
-              type="password"
-              required
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Confirm password"
-              className="rounded-b-md"
-            />
-          </div>
+          <Input
+            id="email"
+            name="email"
+            type="email"
+            label="Email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email address"
+          />
+          <Input
+            id="password"
+            name="password"
+            type="password"
+            label="Password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password"
+          />
+          <Input
+            id="confirm-password"
+            name="confirm-password"
+            type="password"
+            label="Confirm password"
+            required
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Confirm password"
+          />
 
-          <div>
-            <Button type="submit" disabled={isLoading} className="w-full">
-              {isLoading ? "Creating account..." : "Create account"}
-            </Button>
-          </div>
+          <Button type="submit" disabled={isLoading} className="w-full">
+            {isLoading ? "Creating account..." : "Create account"}
+          </Button>
         </form>
+        <p className="mt-6 text-center text-sm text-stone-600 dark:text-stone-400">
+          Already have an account?{" "}
+          <Link
+            to="/login"
+            className="font-semibold text-teal-800 hover:text-teal-900 dark:text-teal-300"
+          >
+            Sign in
+          </Link>
+        </p>
       </div>
     </div>
   );

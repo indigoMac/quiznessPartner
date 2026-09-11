@@ -1,6 +1,6 @@
 import type { ChangeEvent } from "react";
 import { useState, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import Input from "../components/Input";
 import Button from "../components/Button";
@@ -16,7 +16,6 @@ export default function Login() {
   const successMessage =
     (location.state as { message?: string } | null)?.message ?? "";
 
-  // Redirect if already logged in
   useEffect(() => {
     if (user) {
       navigate("/dashboard");
@@ -30,7 +29,6 @@ export default function Login() {
 
     try {
       await login({ email, password });
-      // The useEffect above will handle the redirection once user is set
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to login");
       setIsLoading(false);
@@ -44,57 +42,61 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900 dark:text-white">
-            Sign in to your account
-          </h2>
-        </div>
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+    <div className="mx-auto w-full max-w-md">
+      <div className="card p-6 sm:p-8">
+        <p className="page-kicker mb-2">Welcome back</p>
+        <h2 className="font-display text-3xl font-semibold text-stone-900 dark:text-white">
+          Sign in to your account
+        </h2>
+        <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
           {successMessage && (
-            <div className="rounded-md bg-green-50 dark:bg-green-900/30 p-4">
-              <div className="text-sm text-green-700 dark:text-green-400">
+            <div className="rounded-xl bg-teal-50 dark:bg-teal-950/40 p-4">
+              <div className="text-sm text-teal-800 dark:text-teal-300">
                 {successMessage}
               </div>
             </div>
           )}
           {error && (
-            <div className="rounded-md bg-red-50 dark:bg-red-900/30 p-4">
+            <div className="rounded-xl bg-red-50 dark:bg-red-900/30 p-4">
               <div className="text-sm text-red-700 dark:text-red-400">
                 {error}
               </div>
             </div>
           )}
-          <div className="rounded-md shadow-sm -space-y-px">
-            <Input
-              type="email"
-              name="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={handleInputChange}
-              placeholder="Email address"
-              className="rounded-t-md"
-            />
-            <Input
-              type="password"
-              name="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={handleInputChange}
-              placeholder="Password"
-              className="rounded-b-md"
-            />
-          </div>
+          <Input
+            type="email"
+            name="email"
+            label="Email"
+            autoComplete="email"
+            required
+            value={email}
+            onChange={handleInputChange}
+            placeholder="Email address"
+          />
+          <Input
+            type="password"
+            name="password"
+            label="Password"
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={handleInputChange}
+            placeholder="Password"
+          />
 
-          <div>
-            <Button type="submit" disabled={isLoading} className="w-full">
-              {isLoading ? "Signing in..." : "Sign in"}
-            </Button>
-          </div>
+          <Button type="submit" disabled={isLoading} className="w-full">
+            {isLoading ? "Signing in..." : "Sign in"}
+          </Button>
         </form>
+        <p className="mt-6 text-center text-sm text-stone-600 dark:text-stone-400">
+          New here?{" "}
+          <Link
+            to="/register"
+            className="font-semibold text-teal-800 hover:text-teal-900 dark:text-teal-300"
+          >
+            Create an account
+          </Link>
+        </p>
       </div>
     </div>
   );
