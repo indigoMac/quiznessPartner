@@ -1,8 +1,8 @@
 import json
+import logging
 import os
 from typing import Any, Dict, List, Optional
 
-from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -29,10 +29,18 @@ from db_utils import (
     list_user_study_topics,
     record_quiz_result,
 )
+from env_loader import load_app_env
 from models.user import User
+from services.retrieval_service import (
+    RetrievalError,
+    index_study_topic,
+    retrieval_enabled,
+)
 from url_utils import UrlFetchError, fetch_url_text
 
-load_dotenv()
+logger = logging.getLogger(__name__)
+
+load_app_env()
 
 if os.getenv("ENVIRONMENT") == "production":
     secret_key = os.getenv("SECRET_KEY", "")
@@ -99,6 +107,10 @@ class QuizResponse(BaseModel):
     topic: Optional[str] = None
     study_topic_id: Optional[int] = None
     questions: List[Dict[str, Any]]
+    # How many were asked for. Source material sometimes cannot support the
+    # full request, so clients compare this against len(questions) to tell
+    # the user they got fewer. Not persisted; it describes the request.
+    requested_questions: Optional[int] = None
 
 
 class ResultResponse(BaseModel):
@@ -144,6 +156,23 @@ def _serialize_created_at(value) -> Optional[str]:
     return value.isoformat()
 
 
+def _index_source_material(
+    db: Session, study_topic_id: int, source_text: Optional[str]
+) -> None:
+    """Index a new topic's material for retrieval, if that is switched on.
+
+    A failure here is logged rather than raised: the quiz the user asked for
+    has already been generated, and losing it because a secondary index could
+    not be built would be the worse outcome.
+    """
+    if not source_text or not retrieval_enabled():
+        return
+    try:
+        index_study_topic(db, study_topic_id, source_text)
+    except RetrievalError:
+        logger.exception("Could not index study topic %s", study_topic_id)
+
+
 def _persist_generated_quiz(
     db: Session,
     generated,
@@ -151,6 +180,7 @@ def _persist_generated_quiz(
     source_text: Optional[str] = None,
     source_url: Optional[str] = None,
     study_topic_id: Optional[int] = None,
+    requested_questions: Optional[int] = None,
 ) -> QuizResponse:
     if study_topic_id is not None:
         study_topic = get_study_topic_for_user(db, study_topic_id, user_id)
@@ -167,6 +197,8 @@ def _persist_generated_quiz(
             source_url=source_url,
         )
 
+        _index_source_material(db, study_topic.id, source_text)
+
     quiz = create_quiz(
         db,
         generated.title,
@@ -182,6 +214,7 @@ def _persist_generated_quiz(
         topic=complete_quiz["topic"],
         study_topic_id=complete_quiz.get("study_topic_id"),
         questions=complete_quiz["questions"],
+        requested_questions=requested_questions,
     )
 
 
@@ -216,6 +249,7 @@ async def generate_quiz(
             generated,
             current_user.id,
             source_text=request.content,
+            requested_questions=request.num_questions,
         )
     except QuizGenerationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -262,6 +296,7 @@ async def upload_document(
             generated,
             current_user.id,
             source_text=text,
+            requested_questions=num_questions,
         )
     except QuizGenerationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -291,6 +326,7 @@ async def generate_quiz_from_url(
             current_user.id,
             source_text=text,
             source_url=request.url,
+            requested_questions=request.num_questions,
         )
     except UrlFetchError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -398,6 +434,7 @@ async def practice_study_topic(
             generated,
             current_user.id,
             study_topic_id=study_topic.id,
+            requested_questions=request.num_questions,
         )
     except QuizGenerationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc

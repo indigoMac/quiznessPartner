@@ -146,13 +146,11 @@ class AdminUser(HttpUser):
         email = f"admin{random.randint(1, 100)}@example.com"
 
         response = self.client.post(
-            "/api/v1/auth/register",
-            json={"email": email, "password": "adminpassword"}
+            "/api/v1/auth/register", json={"email": email, "password": "adminpassword"}
         )
 
         response = self.client.post(
-            "/api/v1/auth/token",
-            data={"username": email, "password": "adminpassword"}
+            "/api/v1/auth/token", data={"username": email, "password": "adminpassword"}
         )
 
         if response.status_code == 200:
@@ -163,8 +161,7 @@ class AdminUser(HttpUser):
         """Create larger quizzes with more questions."""
         payload = {
             "content": (
-                "This is comprehensive study material covering "
-                "multiple topics " * 10
+                "This is comprehensive study material covering " "multiple topics " * 10
             ),
             "topic": "Comprehensive Study",
             "num_questions": random.randint(15, 25),

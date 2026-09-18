@@ -45,8 +45,12 @@ class TestListUserQuizzes:
         user = UserFactory.create(db_session)
         quiz = QuizFactory.create(db_session, user=user, title="History")
         QuestionFactory.create_batch(3, db_session, quiz=quiz)
-        record_quiz_result(db_session, quiz.id, score=1, total=3, answers=[0, 1, 2], user_id=user.id)
-        record_quiz_result(db_session, quiz.id, score=3, total=3, answers=[0, 1, 2], user_id=user.id)
+        record_quiz_result(
+            db_session, quiz.id, score=1, total=3, answers=[0, 1, 2], user_id=user.id
+        )
+        record_quiz_result(
+            db_session, quiz.id, score=3, total=3, answers=[0, 1, 2], user_id=user.id
+        )
         db_session.commit()
 
         quizzes, total, completed = list_user_quizzes(db_session, user.id)

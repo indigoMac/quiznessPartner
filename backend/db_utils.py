@@ -163,10 +163,7 @@ def record_quiz_result(
 def list_user_quizzes(db: Session, user_id: int) -> Tuple[List[dict], int, int]:
     """Return quizzes owned by a user plus dashboard counts."""
     quizzes = (
-        db.query(Quiz)
-        .filter(Quiz.user_id == user_id)
-        .order_by(Quiz.id.desc())
-        .all()
+        db.query(Quiz).filter(Quiz.user_id == user_id).order_by(Quiz.id.desc()).all()
     )
     total_quizzes = len(quizzes)
     completed = (

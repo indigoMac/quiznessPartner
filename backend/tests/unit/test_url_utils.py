@@ -53,7 +53,9 @@ def test_extract_html_strips_scripts_and_reads_title():
 
 
 class _FakeResponse:
-    def __init__(self, body: bytes, content_type: str = "text/html", status_code: int = 200):
+    def __init__(
+        self, body: bytes, content_type: str = "text/html", status_code: int = 200
+    ):
         self.status_code = status_code
         self.is_redirect = False
         self.encoding = "utf-8"

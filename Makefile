@@ -11,6 +11,12 @@ YELLOW := \033[33m
 RED := \033[31m
 RESET := \033[0m
 
+# Prefer the repo-root virtualenv over system Python.
+VENV_BIN := $(abspath .venv/bin)
+ifneq ($(wildcard $(VENV_BIN)/python),)
+export PATH := $(VENV_BIN):$(PATH)
+endif
+
 ##@ 🚀 Quick Start
 help: ## Show this help message
 	@echo "$(BLUE)QuizNess Partner - Development Commands$(RESET)"
@@ -22,6 +28,13 @@ help: ## Show this help message
 setup: ## 🛠️  Run the setup script for new developers
 	@echo "$(BLUE)Running development setup...$(RESET)"
 	./setup-dev.sh
+
+venv: ## 🐍 Create .venv and install backend dependencies
+	@echo "$(BLUE)Creating virtualenv at .venv...$(RESET)"
+	python3 -m venv .venv
+	.venv/bin/python -m pip install --upgrade pip
+	.venv/bin/python -m pip install -r backend/requirements-dev.txt
+	@echo "$(GREEN)Activate with: source .venv/bin/activate$(RESET)"
 
 ##@ 🐳 Docker Services
 up: ## ⬆️  Start all services

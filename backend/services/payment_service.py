@@ -184,9 +184,7 @@ class PaymentService:
         webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "whsec_mock")
 
         try:
-            event = stripe.Webhook.construct_event(
-                payload, sig_header, webhook_secret
-            )
+            event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
 
             # Handle different event types
             if event["type"] == "checkout.session.completed":

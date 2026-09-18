@@ -2,7 +2,9 @@ import json
 import logging
 import os
 import tempfile
-from dataclasses import dataclass
+import time
+from contextvars import ContextVar
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 import fitz  # PyMuPDF
@@ -20,9 +22,99 @@ DEPRECATED_LLM_MODELS = {
 }
 GROQ_FALLBACK_MODELS = ("openai/gpt-oss-20b", "openai/gpt-oss-120b")
 
+# Models that support constrained decoding, which guarantees the response
+# matches QUIZ_SCHEMA instead of merely being asked to.
+STRICT_SCHEMA_MODELS = frozenset(GROQ_FALLBACK_MODELS)
+
+QUESTION_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "question": {"type": "string", "description": "The question text"},
+        "options": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Four possible answers",
+        },
+        "correct_answer": {
+            "type": "integer",
+            "description": "Zero-based index of the correct option",
+        },
+    },
+    "required": ["question", "options", "correct_answer"],
+    "additionalProperties": False,
+}
+
+QUIZ_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "title": {
+            "type": "string",
+            "description": "A short specific quiz title, max 80 characters",
+        },
+        "topic": {"type": "string", "description": "A topic label of 2-5 words"},
+        "questions": {"type": "array", "items": QUESTION_SCHEMA},
+    },
+    "required": ["title", "topic", "questions"],
+    "additionalProperties": False,
+}
+
 
 class QuizGenerationError(Exception):
     """Raised when quiz generation fails and the caller should surface the error."""
+
+
+@dataclass
+class GenerationMetrics:
+    """What one call to generate_quiz_from_text actually cost and produced.
+
+    Token counts are recorded rather than a cash figure, because per-model
+    prices change independently of this code.
+    """
+
+    requested: int = 0
+    delivered: int = 0
+    chunks: int = 0
+    api_calls: int = 0
+    topup_rounds: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    duration_ms: float = 0.0
+    models_used: List[str] = field(default_factory=list)
+
+    @property
+    def shortfall(self) -> int:
+        return max(0, self.requested - self.delivered)
+
+    def record_call(self, model: str, usage: Any) -> None:
+        self.api_calls += 1
+        if model not in self.models_used:
+            self.models_used.append(model)
+        self.prompt_tokens += getattr(usage, "prompt_tokens", 0) or 0
+        self.completion_tokens += getattr(usage, "completion_tokens", 0) or 0
+
+
+# Request-scoped so _chat_completion can report usage without every function
+# between it and the entry point having to pass a metrics object down.
+_active_metrics: ContextVar[Optional[GenerationMetrics]] = ContextVar(
+    "quiz_generation_metrics", default=None
+)
+
+
+def _emit_metrics(metrics: GenerationMetrics) -> None:
+    """Publish one generation's metrics.
+
+    Structured logging is the default sink because it needs no account or
+    network egress. To ship these to Langfuse, OpenTelemetry or similar,
+    forward `metrics` from here; nothing else needs to change.
+    """
+    logger.info(
+        "quiz generation: %s/%s questions in %s calls (%.0fms)",
+        metrics.delivered,
+        metrics.requested,
+        metrics.api_calls,
+        metrics.duration_ms,
+        extra={"quiz_generation": metrics.__dict__},
+    )
 
 
 @dataclass
@@ -97,23 +189,51 @@ def extract_text_from_pdf(pdf_file):
         os.unlink(temp_file_path)
 
 
+def _overlap_tail(pieces: List[str], chunk_overlap: int) -> List[str]:
+    """The trailing pieces of a chunk to repeat at the start of the next one."""
+    if chunk_overlap <= 0:
+        return []
+    tail: List[str] = []
+    length = 0
+    for piece in reversed(pieces):
+        if length + len(piece) > chunk_overlap:
+            break
+        tail.insert(0, piece)
+        length += len(piece)
+    return tail
+
+
 def split_text(
     text: str, chunk_size: int = 3000, chunk_overlap: int = 200
 ) -> List[str]:
-    """Split text into manageable chunks for processing."""
-    chunks = []
-    current_chunk = ""
+    """Split text into manageable chunks for processing.
+
+    Chunks break on sentence boundaries. When chunk_overlap is positive the
+    last few sentences of a chunk are repeated at the start of the next one,
+    so a point made across a boundary stays intact in at least one chunk.
+    """
+    chunks: List[str] = []
+    current: List[str] = []
+    length = 0
+
+    # Splitting on ". " strips that separator from every sentence except the
+    # last, which keeps whatever punctuation it already ended with.
     sentences = text.split(". ")
+    last_index = len(sentences) - 1
 
-    for sentence in sentences:
-        if len(current_chunk) + len(sentence) < chunk_size:
-            current_chunk += sentence + ". "
-        else:
-            chunks.append(current_chunk)
-            current_chunk = sentence + ". "
+    for index, sentence in enumerate(sentences):
+        piece = sentence if index == last_index else sentence + ". "
+        if not piece:
+            continue
+        if current and length + len(piece) >= chunk_size:
+            chunks.append("".join(current))
+            current = _overlap_tail(current, chunk_overlap)
+            length = sum(len(item) for item in current)
+        current.append(piece)
+        length += len(piece)
 
-    if current_chunk:
-        chunks.append(current_chunk)
+    if current:
+        chunks.append("".join(current))
 
     return chunks
 
@@ -121,6 +241,13 @@ def split_text(
 SOURCE_CHUNK_SIZE = 3500
 MAX_SOURCE_CHUNKS = 4
 MAX_QUESTIONS = 20
+
+# A schema constrains the shape of each question but cannot constrain how many
+# the model returns, so short results are topped up with follow-up requests.
+# Rounds stop as soon as one adds nothing new; this cap only bounds cost and
+# latency when a model keeps returning a little more each time.
+MAX_TOPUP_ROUNDS = 4
+TOPUP_BUFFER = 2
 
 
 def select_source_chunks(
@@ -133,18 +260,19 @@ def select_source_chunks(
     if len(cleaned) <= chunk_size:
         return [cleaned]
 
+    # No overlap here: generation already spreads questions across chunks, and
+    # repeating text between them invites duplicate questions. Retrieval uses
+    # overlap because there a straddled passage would otherwise be unfindable.
     chunks = [
         chunk.strip()
-        for chunk in split_text(cleaned, chunk_size=chunk_size)
+        for chunk in split_text(cleaned, chunk_size=chunk_size, chunk_overlap=0)
         if chunk.strip()
     ]
     if len(chunks) <= max_chunks:
         return chunks
 
     last_index = len(chunks) - 1
-    indexes = [
-        round(i * last_index / (max_chunks - 1)) for i in range(max_chunks)
-    ]
+    indexes = [round(i * last_index / (max_chunks - 1)) for i in range(max_chunks)]
     selected = []
     seen = set()
     for index in indexes:
@@ -173,16 +301,48 @@ def _normalize_question_text(question: str) -> str:
     return " ".join(str(question).lower().split())
 
 
-def _dedupe_questions(questions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    unique: List[Dict[str, Any]] = []
-    seen = set()
-    for question in questions:
-        key = _normalize_question_text(question.get("question", ""))
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        unique.append(question)
-    return unique
+class _QuestionCollector:
+    """Gathers unique questions until the requested count is reached.
+
+    Deduplication happens as questions arrive rather than at the end, so the
+    caller always knows how many more it still needs while it can still ask
+    for them.
+    """
+
+    def __init__(
+        self, limit: int, existing: Optional[List[Dict[str, Any]]] = None
+    ) -> None:
+        self._limit = limit
+        self._existing = list(existing or [])
+        self._seen = {
+            _normalize_question_text(item.get("question", ""))
+            for item in self._existing
+        }
+        self._seen.discard("")
+        self.questions: List[Dict[str, Any]] = []
+
+    @property
+    def shortfall(self) -> int:
+        """How many more questions are needed to fill the request."""
+        return self._limit - len(self.questions)
+
+    def recent(self, count: int = 12) -> List[Dict[str, Any]]:
+        """The most recent questions, used to tell the model what to avoid."""
+        return (self._existing + self.questions)[-count:]
+
+    def add(self, questions: List[Dict[str, Any]]) -> int:
+        """Keep the unseen questions, up to the limit. Returns how many kept."""
+        added = 0
+        for question in questions:
+            if not self.shortfall:
+                break
+            key = _normalize_question_text(question.get("question", ""))
+            if not key or key in self._seen:
+                continue
+            self._seen.add(key)
+            self.questions.append(question)
+            added += 1
+        return added
 
 
 def _validate_questions(questions: Any) -> List[Dict[str, Any]]:
@@ -200,7 +360,8 @@ def _validate_questions(questions: Any) -> List[Dict[str, Any]]:
             raise QuizGenerationError(
                 "Quiz generation returned an invalid question. Please try again."
             )
-        if not isinstance(question["options"], list) or len(question["options"]) < 2:
+        options = question["options"]
+        if not isinstance(options, list) or len(options) < 2:
             raise QuizGenerationError(
                 "Quiz generation returned invalid answer options. Please try again."
             )
@@ -212,6 +373,11 @@ def _validate_questions(questions: Any) -> List[Dict[str, Any]]:
                     "Quiz generation returned an invalid correct answer. "
                     "Please try again."
                 ) from exc
+        if not 0 <= question["correct_answer"] < len(options):
+            raise QuizGenerationError(
+                "Quiz generation returned a correct answer that does not match "
+                "any option. Please try again."
+            )
     return questions
 
 
@@ -242,7 +408,6 @@ def _build_quiz_prompt(
     text: str,
     topic: Optional[str],
     num_questions: int,
-    include_metadata: bool,
     existing_questions: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     topic_str = (
@@ -250,15 +415,13 @@ def _build_quiz_prompt(
     )
     avoid = ""
     if existing_questions:
-        listed = "; ".join(
-            item.get("question", "") for item in existing_questions[:12]
-        )
+        listed = "; ".join(item.get("question", "") for item in existing_questions)
         avoid = f"\nDo not repeat these questions: {listed}\n"
 
-    if include_metadata:
-        return f"""
+    return f"""
     Create a multiple-choice quiz {topic_str}.
-    Generate {num_questions} challenging but fair questions.
+    Generate exactly {num_questions} challenging but fair questions.
+    The 'questions' array must contain exactly {num_questions} items.
     {avoid}
     Text: {text}
 
@@ -273,39 +436,21 @@ def _build_quiz_prompt(
     ONLY return the JSON object, nothing else.
     """
 
-    return f"""
-    Create {num_questions} multiple-choice questions {topic_str}.
-    {avoid}
-    Text: {text}
-
-    Format your response as a valid JSON array with objects containing:
-    1. 'question': The question text
-    2. 'options': An array of 4 possible answers (as strings)
-    3. 'correct_answer': The index (0-3) of the correct answer
-
-    ONLY return the JSON array, nothing else.
-    """
-
 
 def _generate_from_chunk(
     text: str,
     topic: Optional[str],
     num_questions: int,
-    include_metadata: bool,
     existing_questions: Optional[List[Dict[str, Any]]] = None,
 ) -> GeneratedQuiz:
-    prompt = _build_quiz_prompt(
-        text, topic, num_questions, include_metadata, existing_questions
-    )
+    prompt = _build_quiz_prompt(text, topic, num_questions, existing_questions)
     try:
         result = _chat_completion(prompt)
     except QuizGenerationError:
         raise
     except Exception as exc:
         logger.exception("Quiz generation failed")
-        raise QuizGenerationError(
-            "Quiz generation failed. Please try again."
-        ) from exc
+        raise QuizGenerationError("Quiz generation failed. Please try again.") from exc
 
     parsed = _parse_quiz_payload(result)
     questions = _validate_questions(parsed["questions"])
@@ -342,6 +487,16 @@ def _models_to_try() -> List[str]:
     return models
 
 
+def _response_format(model: str) -> Optional[Dict[str, Any]]:
+    """Constrain decoding to QUIZ_SCHEMA on models that support it."""
+    if model not in STRICT_SCHEMA_MODELS:
+        return None
+    return {
+        "type": "json_schema",
+        "json_schema": {"name": "quiz", "strict": True, "schema": QUIZ_SCHEMA},
+    }
+
+
 def _chat_completion(prompt: str) -> str:
     """Call the configured OpenAI-compatible chat API and return message text."""
     client = OpenAI(api_key=_llm_api_key(), base_url=_llm_base_url())
@@ -357,12 +512,20 @@ def _chat_completion(prompt: str) -> str:
     ]
     last_error: Optional[Exception] = None
     for model in _models_to_try():
+        extra: Dict[str, Any] = {}
+        response_format = _response_format(model)
+        if response_format:
+            extra["response_format"] = response_format
         try:
             response = client.chat.completions.create(
                 model=model,
                 messages=messages,
                 temperature=0.7,
+                **extra,
             )
+            metrics = _active_metrics.get()
+            if metrics is not None:
+                metrics.record_call(model, getattr(response, "usage", None))
             content = response.choices[0].message.content
             if not content or not content.strip():
                 raise QuizGenerationError(
@@ -384,6 +547,39 @@ def _chat_completion(prompt: str) -> str:
     ) from last_error
 
 
+def _top_up_questions(
+    collector: _QuestionCollector,
+    chunks: List[str],
+    topic: Optional[str],
+) -> None:
+    """Ask for more questions when the pass over the chunks came up short.
+
+    Each round asks a small buffer above the shortfall, because some of what
+    comes back will duplicate what we already have. A round that adds nothing
+    new means the source is exhausted, so stop rather than burn more calls.
+    """
+    metrics = _active_metrics.get()
+    for attempt in range(MAX_TOPUP_ROUNDS):
+        if not collector.shortfall:
+            return
+        if metrics is not None:
+            metrics.topup_rounds += 1
+        request = min(collector.shortfall + TOPUP_BUFFER, MAX_QUESTIONS)
+        try:
+            part = _generate_from_chunk(
+                chunks[attempt % len(chunks)],
+                topic,
+                request,
+                collector.recent(),
+            )
+        except QuizGenerationError:
+            logger.warning("Top-up request %s failed", attempt + 1)
+            return
+        if not collector.add(part.questions):
+            logger.warning("Top-up request %s returned no new questions", attempt + 1)
+            return
+
+
 def generate_quiz_from_text(
     text: str,
     topic: Optional[str] = None,
@@ -393,8 +589,29 @@ def generate_quiz_from_text(
     """Generate a quiz from text using the configured LLM provider.
 
     Long sources are split into several chunks so questions cover more than
-    the opening paragraphs. Defaults to Groq (OpenAI-compatible).
+    the opening paragraphs. Chunks that return fewer usable questions than
+    they were asked for are made up by follow-up requests, so the caller gets
+    the count it asked for. Defaults to Groq (OpenAI-compatible).
     """
+    metrics = GenerationMetrics()
+    token = _active_metrics.set(metrics)
+    started = time.perf_counter()
+    try:
+        quiz = _generate_quiz(text, topic, num_questions, existing_questions, metrics)
+    finally:
+        _active_metrics.reset(token)
+        metrics.duration_ms = (time.perf_counter() - started) * 1000
+        _emit_metrics(metrics)
+    return quiz
+
+
+def _generate_quiz(
+    text: str,
+    topic: Optional[str],
+    num_questions: int,
+    existing_questions: Optional[List[Dict[str, Any]]],
+    metrics: GenerationMetrics,
+) -> GeneratedQuiz:
     if not text or not text.strip():
         raise QuizGenerationError("No text was provided to generate a quiz from.")
 
@@ -403,52 +620,47 @@ def generate_quiz_from_text(
     if not chunks:
         raise QuizGenerationError("No text was provided to generate a quiz from.")
 
+    metrics.requested = num_questions
+    metrics.chunks = len(chunks)
+    collector = _QuestionCollector(num_questions, existing_questions)
     counts = _question_counts(num_questions, len(chunks))
-    prior = _dedupe_questions(existing_questions or [])
-    collected: List[Dict[str, Any]] = []
     title: Optional[str] = None
     inferred_topic: Optional[str] = topic
 
     for index, (chunk, count) in enumerate(zip(chunks, counts)):
         if count <= 0:
             continue
-        include_metadata = index == 0
         try:
-            part = _generate_from_chunk(
-                chunk,
-                topic,
-                count,
-                include_metadata,
-                existing_questions=prior + collected,
-            )
+            part = _generate_from_chunk(chunk, topic, count, collector.recent())
         except QuizGenerationError:
-            if not collected:
+            if not collector.questions:
                 raise
             logger.warning("Skipping source chunk %s after generation failed", index)
             continue
 
-        if include_metadata:
+        if title is None:
             title = part.title
             inferred_topic = part.topic
-        collected.extend(part.questions)
+        collector.add(part.questions)
 
-    prior_keys = {
-        _normalize_question_text(item.get("question", "")) for item in prior
-    }
-    questions = [
-        question
-        for question in _dedupe_questions(collected)
-        if _normalize_question_text(question.get("question", "")) not in prior_keys
-    ][:num_questions]
-    if not questions:
+    _top_up_questions(collector, chunks, topic)
+    metrics.delivered = len(collector.questions)
+
+    if not collector.questions:
         raise QuizGenerationError(
             "Quiz generation returned no questions. Try different content."
         )
+    if collector.shortfall:
+        logger.warning(
+            "Generated %s of the %s questions requested",
+            len(collector.questions),
+            num_questions,
+        )
 
     return GeneratedQuiz(
-        title=resolve_quiz_title(title, inferred_topic, questions),
+        title=resolve_quiz_title(title, inferred_topic, collector.questions),
         topic=_clean_label(inferred_topic, 60),
-        questions=questions,
+        questions=collector.questions,
     )
 
 

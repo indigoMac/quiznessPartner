@@ -7,7 +7,12 @@ set -e  # Exit on any error
 
 # Configuration
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PYTEST_CMD="/usr/local/bin/python3 -m pytest"
+ROOT_DIR="$(cd "${PROJECT_DIR}/.." && pwd)"
+if [ -x "${ROOT_DIR}/.venv/bin/python" ]; then
+    PYTEST_CMD="${ROOT_DIR}/.venv/bin/python -m pytest"
+else
+    PYTEST_CMD="python3 -m pytest"
+fi
 
 # Colors for output
 RED='\033[0;31m'

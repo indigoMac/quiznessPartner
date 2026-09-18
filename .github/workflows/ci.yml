@@ -12,7 +12,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:15-alpine
+        image: pgvector/pgvector:pg15
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -86,7 +86,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:15-alpine
+        image: pgvector/pgvector:pg15
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -126,6 +126,66 @@ jobs:
         run: |
           cd backend
           make test-performance
+
+  # The test suite runs on SQLite, so migrations are otherwise never executed.
+  # This job applies them to real PostgreSQL with pgvector, then rolls them
+  # back, so a broken migration fails here rather than during a deploy.
+  migrations:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: quizness_migrations
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt alembic
+
+      - name: Apply migrations
+        env:
+          DATABASE_URI: postgresql://postgres:postgres@localhost:5432/quizness_migrations
+        run: |
+          cd backend
+          alembic upgrade head
+
+      - name: Verify the schema pgvector needs is in place
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d quizness_migrations -c \
+            "SELECT extname FROM pg_extension WHERE extname = 'vector';" | grep vector
+          psql -h localhost -U postgres -d quizness_migrations -c \
+            "SELECT indexname FROM pg_indexes WHERE tablename = 'source_chunks';" \
+            | grep ix_source_chunks_embedding
+
+      - name: Roll migrations back
+        env:
+          DATABASE_URI: postgresql://postgres:postgres@localhost:5432/quizness_migrations
+        run: |
+          cd backend
+          alembic downgrade base
 
   security-scan:
     runs-on: ubuntu-latest
@@ -181,6 +241,12 @@ jobs:
         run: |
           cd backend
           flake8 . --exclude=tests,migrations --statistics
+
+      - name: Check formatting
+        run: |
+          cd backend
+          black --check --diff .
+          isort --check-only --diff .
 
   # Railway deploys backend from main when checks pass.
   # Vercel deploys frontend from main when checks pass.

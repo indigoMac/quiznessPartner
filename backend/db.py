@@ -1,11 +1,12 @@
 import os
 from typing import Generator, Optional
 
-from dotenv import load_dotenv
-from sqlalchemy import create_engine, Engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy import Engine, create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
-load_dotenv()
+from env_loader import load_app_env
+
+load_app_env()
 
 ENV = os.getenv("ENVIRONMENT") or os.getenv("FASTAPI_ENV") or "development"
 TESTING = os.getenv("TESTING", "0") == "1" or ENV == "test"
@@ -67,9 +68,7 @@ def get_session_local():
     global SessionLocal
     if SessionLocal is None:
         SessionLocal = sessionmaker(
-            autocommit=False,
-            autoflush=False,
-            bind=get_engine()
+            autocommit=False, autoflush=False, bind=get_engine()
         )
     return SessionLocal
 

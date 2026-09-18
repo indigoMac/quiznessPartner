@@ -1,5 +1,12 @@
 .PHONY: help install test test-unit test-integration test-e2e test-performance test-load test-all test-fast clean lint format type-check security
 
+# Prefer the repo-root virtualenv so `make` never installs into system Python.
+VENV_BIN := $(abspath $(CURDIR)/../.venv/bin)
+ifneq ($(wildcard $(VENV_BIN)/python),)
+export PATH := $(VENV_BIN):$(PATH)
+endif
+PYTHON ?= python3
+
 # Default target
 help:
 	@echo "QuizNess Backend Development Commands"
@@ -17,6 +24,7 @@ help:
 	@echo "  test-all          Run complete test suite"
 	@echo "  test-fast         Run fast test suite (unit tests only)"
 	@echo "  test              Alias for test-unit"
+	@echo "  smoke-generation  Generate a real quiz (needs an API key, costs money)"
 	@echo ""
 	@echo "Quality Commands:"
 	@echo "  lint              Run linting checks"
@@ -72,6 +80,12 @@ test-all:
 test-fast:
 	@echo "Running fast test suite..."
 	python3 -m pytest tests/unit/ -v
+
+# Real API calls against the configured provider. Costs money, needs a key,
+# and is deliberately excluded from `make test` and CI.
+smoke-generation:
+	@echo "Generating a real quiz against the configured LLM provider..."
+	python3 -m scripts.smoke_test_generation --questions $(or $(QUESTIONS),10) --verbose
 
 # Alias for the CI-equivalent test suite
 test:

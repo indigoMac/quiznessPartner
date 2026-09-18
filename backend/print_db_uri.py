@@ -1,9 +1,8 @@
 import os
 
-from dotenv import load_dotenv
+from env_loader import load_app_env
 
-# Explicitly load the .env file from the project root
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "../.env"))
+load_app_env()
 
 for key, value in os.environ.items():
     if "DATABASE" in key:

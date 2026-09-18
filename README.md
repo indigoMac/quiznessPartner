@@ -19,7 +19,7 @@ An AI-powered quiz generation platform that creates interactive quizzes from doc
 
 - **Docker & Docker Compose**: For containerized development
 - **Node.js 18+**: For frontend development
-- **Python 3.9+**: For backend development
+- **Python 3.12**: Backend (install into `.venv` at the repo root)
 - **Git**: For version control
 
 ## 🛠️ Quick Start
@@ -29,6 +29,10 @@ An AI-powered quiz generation platform that creates interactive quizzes from doc
 ```bash
 git clone <repository-url>
 cd quiznessPartner
+
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r backend/requirements-dev.txt
 
 # Load development environment
 direnv allow  # or source .envrc

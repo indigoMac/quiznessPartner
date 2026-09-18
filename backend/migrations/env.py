@@ -3,22 +3,23 @@ import sys
 from logging.config import fileConfig
 
 from alembic import context
-from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
 
 # Add the parent directory to the path so imports work correctly
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from env_loader import load_app_env
 
 # Import all models so Alembic can detect them
 from models.base import Base
 from models.question import Question  # noqa: F401
 from models.quiz import Quiz  # noqa: F401
 from models.result import Result  # noqa: F401
+from models.source_chunk import SourceChunk  # noqa: F401
 from models.study_topic import StudyTopic  # noqa: F401
 from models.user import User  # noqa: F401
 
-# Load .env file
-load_dotenv()
+load_app_env()
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -27,9 +28,7 @@ config = context.config
 # Override sqlalchemy.url with DATABASE_URI/DATABASE_URL from the environment
 from db import resolve_database_uri
 
-config.set_main_option(
-    "sqlalchemy.url", resolve_database_uri().replace("%", "%%")
-)
+config.set_main_option("sqlalchemy.url", resolve_database_uri().replace("%", "%%"))
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

@@ -5,15 +5,31 @@ import pytest
 
 from ai_utils import (
     DEFAULT_LLM_BASE_URL,
+    QUIZ_SCHEMA,
     GeneratedQuiz,
     QuizGenerationError,
     _llm_base_url,
     _llm_model,
+    _response_format,
     as_generated_quiz,
     extract_text_from_pdf,
     generate_quiz_from_text,
     select_source_chunks,
 )
+
+
+def _question(text: str, correct_answer: int = 0) -> dict:
+    return {
+        "question": text,
+        "options": ["A", "B", "C", "D"],
+        "correct_answer": correct_answer,
+    }
+
+
+def _quiz_payload(*questions: dict) -> str:
+    return json.dumps(
+        {"title": "Sample Quiz", "topic": "Sample", "questions": list(questions)}
+    )
 
 
 class TestAIUtils:
@@ -257,3 +273,213 @@ class TestAIUtils:
             "Another opening question?",
             "Question from later in the notes?",
         }
+
+
+class TestQuestionCount:
+    """The requested number of questions should survive short model replies."""
+
+    @patch("ai_utils._chat_completion")
+    def test_tops_up_when_model_returns_too_few(self, mock_openai):
+        mock_openai.side_effect = [
+            _quiz_payload(_question("Q1?"), _question("Q2?")),
+            _quiz_payload(_question("Q3?"), _question("Q4?"), _question("Q5?")),
+        ]
+
+        result = generate_quiz_from_text("Short source text.", num_questions=5)
+
+        assert len(result.questions) == 5
+        assert mock_openai.call_count == 2
+
+    @patch("ai_utils._chat_completion")
+    def test_top_up_ignores_repeated_questions(self, mock_openai):
+        mock_openai.side_effect = [
+            _quiz_payload(_question("Q1?"), _question("Q2?")),
+            _quiz_payload(_question("Q2?"), _question("Q3?")),
+        ]
+
+        result = generate_quiz_from_text("Short source text.", num_questions=4)
+
+        assert [item["question"] for item in result.questions] == [
+            "Q1?",
+            "Q2?",
+            "Q3?",
+        ]
+
+    @patch("ai_utils._chat_completion")
+    def test_stops_topping_up_when_no_new_questions_arrive(self, mock_openai):
+        mock_openai.return_value = _quiz_payload(_question("Q1?"))
+
+        result = generate_quiz_from_text("Short source text.", num_questions=5)
+
+        assert len(result.questions) == 1
+        assert mock_openai.call_count == 2
+
+    @patch("ai_utils._chat_completion")
+    def test_reaches_the_count_across_several_short_replies(self, mock_openai):
+        """A model that trickles out questions should still fill the request."""
+        counter = iter(range(1, 100))
+        mock_openai.side_effect = lambda _prompt: _quiz_payload(
+            _question(f"Q{next(counter)}?"), _question(f"Q{next(counter)}?")
+        )
+
+        result = generate_quiz_from_text("Short source text.", num_questions=7)
+
+        assert len(result.questions) == 7
+        assert len({item["question"] for item in result.questions}) == 7
+
+    @patch("ai_utils._chat_completion")
+    def test_never_exceeds_the_requested_count(self, mock_openai):
+        mock_openai.return_value = _quiz_payload(
+            *(_question(f"Q{index}?") for index in range(8))
+        )
+
+        result = generate_quiz_from_text("Short source text.", num_questions=3)
+
+        assert len(result.questions) == 3
+
+    @patch("ai_utils._chat_completion")
+    def test_survives_a_failed_chunk(self, mock_openai):
+        long_text = "This is a reasonably long test sentence used for chunking. " * 100
+        mock_openai.side_effect = [
+            _quiz_payload(_question("Q1?")),
+            "not json at all",
+            _quiz_payload(_question("Q2?")),
+        ]
+
+        result = generate_quiz_from_text(long_text, num_questions=2)
+
+        assert [item["question"] for item in result.questions] == ["Q1?", "Q2?"]
+
+
+class TestStructuredOutput:
+    def test_requests_a_strict_schema_on_supported_models(self):
+        response_format = _response_format("openai/gpt-oss-20b")
+
+        assert response_format is not None
+        assert response_format["type"] == "json_schema"
+        assert response_format["json_schema"]["strict"] is True
+        assert response_format["json_schema"]["schema"] == QUIZ_SCHEMA
+
+    def test_omits_the_schema_on_unsupported_models(self):
+        assert _response_format("some-other-model") is None
+
+    def test_schema_meets_strict_mode_requirements(self):
+        question_schema = QUIZ_SCHEMA["properties"]["questions"]["items"]
+
+        for schema in (QUIZ_SCHEMA, question_schema):
+            assert schema["additionalProperties"] is False
+            assert set(schema["required"]) == set(schema["properties"])
+
+    @patch("ai_utils.OpenAI")
+    def test_passes_the_schema_to_the_api(self, mock_openai_class):
+        client = mock_openai_class.return_value
+        message = MagicMock(content=_quiz_payload(_question("Q?")))
+        client.chat.completions.create.return_value = MagicMock(
+            choices=[MagicMock(message=message)]
+        )
+
+        generate_quiz_from_text("Short source text.", num_questions=1)
+
+        kwargs = client.chat.completions.create.call_args.kwargs
+        assert kwargs["response_format"]["json_schema"]["strict"] is True
+
+
+class TestGenerationMetrics:
+    """Generation should report what it cost and whether it fell short."""
+
+    @patch("ai_utils._emit_metrics")
+    @patch("ai_utils._chat_completion")
+    def test_reports_counts_and_topup_rounds(self, mock_openai, mock_emit):
+        mock_openai.side_effect = [
+            _quiz_payload(_question("Q1?")),
+            _quiz_payload(_question("Q2?"), _question("Q3?")),
+        ]
+
+        generate_quiz_from_text("Short source text.", num_questions=3)
+
+        metrics = mock_emit.call_args.args[0]
+        assert metrics.requested == 3
+        assert metrics.delivered == 3
+        assert metrics.chunks == 1
+        assert metrics.topup_rounds == 1
+        assert metrics.shortfall == 0
+        assert metrics.duration_ms > 0
+
+    @patch("ai_utils._emit_metrics")
+    @patch("ai_utils._chat_completion")
+    def test_reports_shortfall(self, mock_openai, mock_emit):
+        mock_openai.return_value = _quiz_payload(_question("Q1?"))
+
+        generate_quiz_from_text("Short source text.", num_questions=5)
+
+        metrics = mock_emit.call_args.args[0]
+        assert metrics.delivered == 1
+        assert metrics.shortfall == 4
+
+    @patch("ai_utils._emit_metrics")
+    @patch("ai_utils._chat_completion")
+    def test_reports_metrics_even_when_generation_fails(self, mock_openai, mock_emit):
+        mock_openai.side_effect = Exception("API Error")
+
+        with pytest.raises(QuizGenerationError):
+            generate_quiz_from_text("Some text")
+
+        assert mock_emit.called
+        assert mock_emit.call_args.args[0].delivered == 0
+
+    @patch("ai_utils.OpenAI")
+    def test_accumulates_token_usage_from_the_api(self, mock_openai_class):
+        client = mock_openai_class.return_value
+        message = MagicMock(content=_quiz_payload(_question("Q?")))
+        client.chat.completions.create.return_value = MagicMock(
+            choices=[MagicMock(message=message)],
+            usage=MagicMock(prompt_tokens=120, completion_tokens=45),
+        )
+
+        with patch("ai_utils._emit_metrics") as mock_emit:
+            generate_quiz_from_text("Short source text.", num_questions=1)
+
+        metrics = mock_emit.call_args.args[0]
+        assert metrics.api_calls == 1
+        assert metrics.prompt_tokens == 120
+        assert metrics.completion_tokens == 45
+        assert metrics.models_used == ["openai/gpt-oss-20b"]
+
+    @patch("ai_utils._chat_completion")
+    def test_metrics_do_not_leak_between_generations(self, mock_openai):
+        mock_openai.return_value = _quiz_payload(_question("Q1?"))
+        captured = []
+
+        with patch("ai_utils._emit_metrics", side_effect=captured.append):
+            generate_quiz_from_text("Short source text.", num_questions=1)
+            generate_quiz_from_text("Short source text.", num_questions=1)
+
+        assert len(captured) == 2
+        assert captured[0] is not captured[1]
+        assert all(item.requested == 1 for item in captured)
+
+
+class TestQuestionValidation:
+    @patch("ai_utils._chat_completion")
+    def test_rejects_correct_answer_outside_the_options(self, mock_openai):
+        mock_openai.return_value = json.dumps([_question("Q?", correct_answer=9)])
+
+        with pytest.raises(QuizGenerationError, match="does not match any option"):
+            generate_quiz_from_text("Some text")
+
+    @patch("ai_utils._chat_completion")
+    def test_rejects_negative_correct_answer(self, mock_openai):
+        mock_openai.return_value = json.dumps([_question("Q?", correct_answer=-1)])
+
+        with pytest.raises(QuizGenerationError, match="does not match any option"):
+            generate_quiz_from_text("Some text")
+
+    @patch("ai_utils._chat_completion")
+    def test_coerces_a_numeric_string_correct_answer(self, mock_openai):
+        question = _question("Q?")
+        question["correct_answer"] = "2"
+        mock_openai.return_value = json.dumps([question])
+
+        result = generate_quiz_from_text("Some text", num_questions=1)
+
+        assert result.questions[0]["correct_answer"] == 2

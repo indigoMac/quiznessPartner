@@ -36,7 +36,7 @@ services:
       - test-network
 
   db-test:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15
     ports:
       - "5434:5432" # Expose test database on port 5434
     environment:
@@ -73,7 +73,7 @@ services:
 
   # Test database with seed data
   db-test-seed:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres

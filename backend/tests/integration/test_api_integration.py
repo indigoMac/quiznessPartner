@@ -571,6 +571,40 @@ def test_generate_quiz_persists_generated_title(mock_generate_quiz, auth_token):
 
 
 @patch("main.generate_quiz_from_text")
+def test_generate_quiz_reports_the_requested_question_count(
+    mock_generate_quiz, auth_token
+):
+    """Clients need the requested count to tell the user they got fewer."""
+    mock_generate_quiz.return_value = GeneratedQuiz(
+        title="European Capitals",
+        topic="Geography",
+        questions=[
+            {
+                "question": "What is the capital of France?",
+                "options": ["Berlin", "Paris", "London", "Madrid"],
+                "correct_answer": 1,
+            },
+            {
+                "question": "What is the capital of Spain?",
+                "options": ["Lisbon", "Madrid", "Rome", "Paris"],
+                "correct_answer": 1,
+            },
+        ],
+    )
+
+    response = client.post(
+        "/api/v1/generate-quiz",
+        headers=auth_token,
+        json={"content": "Test content", "num_questions": 5},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["requested_questions"] == 5
+    assert len(data["questions"]) == 2
+
+
+@patch("main.generate_quiz_from_text")
 def test_practice_study_topic_creates_another_quiz(mock_generate_quiz, auth_token):
     mock_generate_quiz.side_effect = [
         GeneratedQuiz(
@@ -624,9 +658,7 @@ def test_practice_study_topic_creates_another_quiz(mock_generate_quiz, auth_toke
 
 
 def test_practice_study_topic_requires_auth(setup_db):
-    response = client.post(
-        "/api/v1/study-topics/1/practice", json={"num_questions": 1}
-    )
+    response = client.post("/api/v1/study-topics/1/practice", json={"num_questions": 1})
     assert response.status_code == 401
 
 

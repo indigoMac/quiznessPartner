@@ -27,10 +27,16 @@ import db
 from db_utils import get_db
 from main import app
 from models.base import Base
+
 # Import centralized factories
-from tests.fixtures.factories import (MockResponses, QuestionFactory,
-                                      QuizFactory, QuizResultFactory,
-                                      TestDataSets, UserFactory)
+from tests.fixtures.factories import (
+    MockResponses,
+    QuestionFactory,
+    QuizFactory,
+    QuizResultFactory,
+    TestDataSets,
+    UserFactory,
+)
 
 # Database configuration for tests
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
@@ -50,7 +56,7 @@ def setup_test_environment():
     """Set up test environment configuration."""
     # Reset any existing database connections
     db.reset_db_connection()
-    
+
     # Mock external services during testing
     with patch.dict(
         os.environ,
@@ -63,7 +69,7 @@ def setup_test_environment():
         },
     ):
         yield
-    
+
     # Cleanup after all tests
     db.reset_db_connection()
 

@@ -16,6 +16,7 @@ from auth.auth_utils import get_password_hash
 from models.question import Question
 from models.quiz import Quiz
 from models.result import Result
+
 # Import models
 from models.user import User
 
