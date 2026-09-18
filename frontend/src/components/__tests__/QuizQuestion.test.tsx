@@ -1,6 +1,7 @@
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import QuizQuestion from "../QuizQuestion";
 import type { QuizQuestion as QuizQuestionType } from "../../types/api";
 
@@ -107,5 +108,39 @@ describe("QuizQuestion Component", () => {
 
     const checkmark = screen.getByText("✓");
     expect(checkmark).toBeInTheDocument();
+  });
+
+  it("does not show an explain button before results", () => {
+    render(
+      <QuizQuestion
+        {...defaultProps}
+        question={{ ...mockQuestion, id: 1 }}
+        quizId={10}
+      />
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /explain this question/i })
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows an explain button after results when a quiz id is present", () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <QuizQuestion
+          {...defaultProps}
+          question={{ ...mockQuestion, id: 1 }}
+          quizId={10}
+          showResults={true}
+        />
+      </QueryClientProvider>
+    );
+
+    expect(
+      screen.getByRole("button", { name: /explain this question/i })
+    ).toBeInTheDocument();
   });
 });

@@ -3,6 +3,7 @@
 from db_utils import (
     create_quiz,
     create_study_topic,
+    get_quiz_question,
     list_user_quizzes,
     list_user_study_topics,
     record_quiz_result,
@@ -121,3 +122,30 @@ class TestRecordQuizResult:
 
         stored = db_session.query(Result).filter(Result.id == result.id).first()
         assert stored.user_id is None
+
+
+class TestGetQuizQuestion:
+    def test_returns_a_question_that_belongs_to_the_quiz(self, db_session):
+        user = UserFactory.create(db_session)
+        quiz = create_quiz(db_session, title="Capitals", topic="Geo", user_id=user.id)
+        question = QuestionFactory.create(
+            db_session,
+            quiz=quiz,
+            question_text="What is the capital of France?",
+        )
+        db_session.commit()
+
+        found = get_quiz_question(db_session, quiz.id, question.id)
+
+        assert found is not None
+        assert found.id == question.id
+        assert found.question_text == "What is the capital of France?"
+
+    def test_does_not_return_a_question_from_another_quiz(self, db_session):
+        user = UserFactory.create(db_session)
+        quiz = create_quiz(db_session, title="One", topic="Geo", user_id=user.id)
+        other = create_quiz(db_session, title="Two", topic="Geo", user_id=user.id)
+        question = QuestionFactory.create(db_session, quiz=other)
+        db_session.commit()
+
+        assert get_quiz_question(db_session, quiz.id, question.id) is None

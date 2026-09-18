@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ai_utils import (
+    ExplanationError,
     QuizGenerationError,
     as_generated_quiz,
     extract_text_from_pdf,
@@ -31,6 +32,12 @@ from db_utils import (
 )
 from env_loader import load_app_env
 from models.user import User
+from services.explanation_service import (
+    InvalidSelectionError,
+    QuestionNotFoundError,
+    QuizNotFoundError,
+    generate_question_explanation,
+)
 from services.retrieval_service import (
     RetrievalError,
     index_study_topic,
@@ -118,6 +125,14 @@ class ResultResponse(BaseModel):
     score: int
     total: int
     answers: List[int]
+
+
+class ExplainRequest(BaseModel):
+    selected_answer: Optional[int] = Field(default=None, ge=0)
+
+
+class ExplainResponse(BaseModel):
+    explanation: str
 
 
 class QuizSummary(BaseModel):
@@ -497,6 +512,39 @@ async def submit_answer(
             total=len(questions),
             answers=submission.answers,
         )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
+
+
+@app.post(
+    "/api/v1/quiz/{quiz_id}/questions/{question_id}/explain",
+    response_model=ExplainResponse,
+)
+async def explain_question(
+    quiz_id: int,
+    question_id: int,
+    request: ExplainRequest,
+    db: Session = Depends(get_db),
+):
+    """Explain a quiz question using the study topic source when available."""
+    try:
+        explanation = generate_question_explanation(
+            db,
+            quiz_id,
+            question_id,
+            request.selected_answer,
+        )
+        return ExplainResponse(explanation=explanation)
+    except QuizNotFoundError:
+        raise HTTPException(status_code=404, detail="Quiz not found")
+    except QuestionNotFoundError:
+        raise HTTPException(status_code=404, detail="Question not found")
+    except InvalidSelectionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ExplanationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     except HTTPException:
         raise
     except Exception as exc:

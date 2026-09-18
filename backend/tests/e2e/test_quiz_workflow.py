@@ -212,6 +212,49 @@ class TestQuizTakingWorkflow:
         assert result["total"] == len(correct_answers)
         assert result["answers"] == correct_answers
 
+    @patch("services.explanation_service.explain_quiz_question")
+    @patch("main.generate_quiz_from_text")
+    def test_explain_question_after_submit(
+        self, mock_generate_quiz, mock_explain, authenticated_client
+    ):
+        client, headers = authenticated_client
+        mock_generate_quiz.return_value = [
+            {
+                "question": "What is the capital of France?",
+                "options": ["London", "Berlin", "Paris", "Madrid"],
+                "correct_answer": 2,
+            }
+        ]
+        mock_explain.return_value = (
+            "Paris is the capital of France, as the source material states."
+        )
+
+        created = client.post(
+            "/api/v1/generate-quiz",
+            json={
+                "content": "France is a country in Europe. Paris is its capital.",
+                "topic": "Geography",
+                "num_questions": 1,
+            },
+            headers=headers,
+        )
+        assert created.status_code == 200
+        quiz = created.json()
+        question = quiz["questions"][0]
+
+        response = client.post(
+            f"/api/v1/quiz/{quiz['id']}/questions/{question['id']}/explain",
+            json={"selected_answer": 0},
+        )
+
+        assert response.status_code == 200
+        assert "Paris is the capital" in response.json()["explanation"]
+        kwargs = mock_explain.call_args.kwargs
+        assert kwargs["question"] == "What is the capital of France?"
+        assert kwargs["selected_answer"] == 0
+        assert kwargs["correct_answer"] == 2
+        assert "Paris is its capital" in kwargs["source_text"]
+
     @patch("main.generate_quiz_from_text")
     def test_partial_correct_answers(self, mock_generate_quiz, authenticated_client):
         """Test quiz submission with partially correct answers"""

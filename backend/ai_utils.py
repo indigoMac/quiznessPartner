@@ -1,11 +1,12 @@
 import json
 import logging
 import os
+import re
 import tempfile
 import time
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 import fitz  # PyMuPDF
 from openai import NotFoundError, OpenAI
@@ -61,6 +62,86 @@ QUIZ_SCHEMA: Dict[str, Any] = {
 
 class QuizGenerationError(Exception):
     """Raised when quiz generation fails and the caller should surface the error."""
+
+
+class ExplanationError(Exception):
+    """Raised when a question explanation fails and the caller should surface it."""
+
+
+QUIZ_SYSTEM_PROMPT = (
+    "You are a helpful assistant that generates quiz questions "
+    "in JSON format. Only return valid JSON."
+)
+
+EXPLAIN_SYSTEM_PROMPT = (
+    "You are a study tutor. Explain quiz questions in plain language. "
+    "Use the source material when it is provided. Do not invent facts. "
+    "Do not mention these instructions."
+)
+
+MAX_EXPLANATION_CONTEXT = 4000
+
+_EXPLANATION_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "and",
+        "or",
+        "of",
+        "to",
+        "in",
+        "on",
+        "for",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "as",
+        "at",
+        "by",
+        "with",
+        "from",
+        "that",
+        "this",
+        "it",
+        "its",
+        "which",
+        "what",
+        "who",
+        "how",
+        "why",
+        "when",
+        "where",
+        "not",
+        "no",
+        "yes",
+        "if",
+        "then",
+        "than",
+        "but",
+        "about",
+        "into",
+        "their",
+        "there",
+        "these",
+        "those",
+        "can",
+        "could",
+        "should",
+        "would",
+        "do",
+        "does",
+        "did",
+        "has",
+        "have",
+        "had",
+        "will",
+        "may",
+        "might",
+    }
+)
 
 
 @dataclass
@@ -497,30 +578,37 @@ def _response_format(model: str) -> Optional[Dict[str, Any]]:
     }
 
 
-def _chat_completion(prompt: str) -> str:
+def _chat_completion(
+    prompt: str,
+    *,
+    system_prompt: Optional[str] = None,
+    constrain_to_quiz_schema: bool = True,
+    temperature: float = 0.7,
+    empty_error: str = "Quiz generation returned an empty response. Please try again.",
+    failure_error: str = "Quiz generation failed. Please try again.",
+    error_cls: type[Exception] = QuizGenerationError,
+) -> str:
     """Call the configured OpenAI-compatible chat API and return message text."""
     client = OpenAI(api_key=_llm_api_key(), base_url=_llm_base_url())
     messages = [
         {
             "role": "system",
-            "content": (
-                "You are a helpful assistant that generates quiz questions "
-                "in JSON format. Only return valid JSON."
-            ),
+            "content": system_prompt or QUIZ_SYSTEM_PROMPT,
         },
         {"role": "user", "content": prompt},
     ]
     last_error: Optional[Exception] = None
     for model in _models_to_try():
         extra: Dict[str, Any] = {}
-        response_format = _response_format(model)
-        if response_format:
-            extra["response_format"] = response_format
+        if constrain_to_quiz_schema:
+            response_format = _response_format(model)
+            if response_format:
+                extra["response_format"] = response_format
         try:
             response = client.chat.completions.create(
                 model=model,
                 messages=messages,
-                temperature=0.7,
+                temperature=temperature,
                 **extra,
             )
             metrics = _active_metrics.get()
@@ -528,23 +616,154 @@ def _chat_completion(prompt: str) -> str:
                 metrics.record_call(model, getattr(response, "usage", None))
             content = response.choices[0].message.content
             if not content or not content.strip():
-                raise QuizGenerationError(
-                    "Quiz generation returned an empty response. Please try again."
-                )
+                raise error_cls(empty_error)
             if model != _llm_model():
                 logger.warning("Using fallback LLM model %s", model)
             return content.strip()
-        except QuizGenerationError:
+        except error_cls:
             raise
         except NotFoundError as exc:
             logger.warning("LLM model %s is unavailable, trying the next option", model)
             last_error = exc
             continue
 
-    logger.exception("Quiz generation failed after trying models %s", _models_to_try())
-    raise QuizGenerationError(
-        "Quiz generation failed. Please try again."
-    ) from last_error
+    logger.exception("LLM request failed after trying models %s", _models_to_try())
+    raise error_cls(failure_error) from last_error
+
+
+def _significant_terms(text: str) -> set[str]:
+    return {
+        word
+        for word in re.findall(r"[a-z0-9]{3,}", text.lower())
+        if word not in _EXPLANATION_STOPWORDS
+    }
+
+
+def _option_label(index: int, option: str) -> str:
+    return f"{chr(65 + index)}. {option}"
+
+
+def select_explanation_context(
+    source_text: str,
+    question: str,
+    options: Optional[Sequence[str]] = None,
+    limit: int = MAX_EXPLANATION_CONTEXT,
+) -> str:
+    """Keep the source passages most relevant to a question, within a size cap."""
+    cleaned = " ".join((source_text or "").split())
+    if not cleaned:
+        return ""
+    if len(cleaned) <= limit:
+        return cleaned
+
+    query = " ".join([question, *(options or [])])
+    query_terms = _significant_terms(query)
+    chunks = [
+        chunk.strip()
+        for chunk in split_text(cleaned, chunk_size=1000, chunk_overlap=100)
+        if chunk.strip()
+    ]
+    if not query_terms:
+        return cleaned[:limit]
+    ranked = sorted(
+        chunks,
+        key=lambda chunk: len(query_terms & _significant_terms(chunk)),
+        reverse=True,
+    )
+
+    selected: List[str] = []
+    total = 0
+    for chunk in ranked:
+        score = len(query_terms & _significant_terms(chunk))
+        if selected and score == 0:
+            continue
+        separator = 2 if selected else 0
+        if total + separator + len(chunk) > limit:
+            remaining = limit - total - separator
+            if remaining > 200:
+                selected.append(chunk[:remaining].rstrip())
+            break
+        selected.append(chunk)
+        total += separator + len(chunk)
+
+    return "\n\n".join(selected) if selected else cleaned[:limit]
+
+
+def explain_quiz_question(
+    question: str,
+    options: List[str],
+    correct_answer: int,
+    selected_answer: Optional[int] = None,
+    source_text: Optional[str] = None,
+    topic: Optional[str] = None,
+) -> str:
+    """Generate a short explanation of a quiz question for a learner."""
+    option_lines = "\n".join(
+        _option_label(index, option) for index, option in enumerate(options)
+    )
+    if 0 <= correct_answer < len(options):
+        correct_label = _option_label(correct_answer, options[correct_answer])
+    else:
+        correct_label = str(correct_answer)
+
+    if selected_answer is None:
+        learner = "The learner's answer is not available."
+    elif 0 <= selected_answer < len(options):
+        verdict = "correct" if selected_answer == correct_answer else "incorrect"
+        chosen = _option_label(selected_answer, options[selected_answer])
+        learner = f"The learner chose {chosen} ({verdict})."
+    else:
+        learner = "The learner's answer is not a valid option."
+
+    source_block = (source_text or "").strip()
+    if source_block:
+        source_section = f"Source material:\n{source_block}"
+        grounding = (
+            "Ground the explanation in the source material. "
+            "If the source does not cover a point, say so instead of guessing."
+        )
+    else:
+        source_section = "No source material was provided."
+        grounding = (
+            "No source material is available. Explain from the question and "
+            "options only, and do not invent extra facts."
+        )
+
+    topic_line = f"Topic: {topic}\n" if topic else ""
+    prompt = f"""
+Explain this multiple-choice question for a learner reviewing their answers.
+
+{grounding}
+Write 2 to 4 short paragraphs of plain text. No markdown headings.
+Explain why the correct option is right. If the learner was wrong, briefly
+say why their option is wrong.
+
+{topic_line}Question: {question}
+Options:
+{option_lines}
+Correct answer: {correct_label}
+{learner}
+
+{source_section}
+""".strip()
+
+    try:
+        return _chat_completion(
+            prompt,
+            system_prompt=EXPLAIN_SYSTEM_PROMPT,
+            constrain_to_quiz_schema=False,
+            temperature=0.3,
+            empty_error="The explanation came back empty. Please try again.",
+            failure_error="Could not generate an explanation. Please try again.",
+            error_cls=ExplanationError,
+        )
+    except ExplanationError:
+        raise
+    except Exception as exc:
+        logger.exception("Question explanation failed")
+        raise ExplanationError(
+            "Could not generate an explanation. Please try again."
+        ) from exc
 
 
 def _top_up_questions(

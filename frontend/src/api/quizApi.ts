@@ -9,6 +9,8 @@ import type {
   UploadDocumentForm,
   QuizListResponse,
   PracticeStudyTopicForm,
+  ExplainQuestionRequest,
+  ExplainQuestionResponse,
 } from "../types/api";
 
 const api = axios.create({
@@ -83,6 +85,26 @@ export const submitAnswers = async (
 ): Promise<QuizResult> => {
   const response = await api.post<QuizResult>("/api/v1/submit-answer", data);
   return response.data;
+};
+
+export const explainQuestion = async (
+  data: ExplainQuestionRequest
+): Promise<ExplainQuestionResponse> => {
+  try {
+    const response = await api.post<ExplainQuestionResponse>(
+      `/api/v1/quiz/${data.quiz_id}/questions/${data.question_id}/explain`,
+      { selected_answer: data.selected_answer }
+    );
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      const detail = error.response?.data?.detail;
+      if (typeof detail === "string") {
+        throw new Error(detail);
+      }
+    }
+    throw error;
+  }
 };
 
 // Health check

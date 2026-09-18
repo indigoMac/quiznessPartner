@@ -154,6 +154,18 @@ describe("QuizPage", () => {
     });
   });
 
+  it("shows an explain button after answers are submitted", async () => {
+    const user = userEvent.setup();
+    render(<QuizPage />, { wrapper });
+
+    await user.click(screen.getByText("Paris"));
+    await user.click(screen.getByText(/submit answers/i));
+
+    expect(
+      await screen.findByRole("button", { name: /explain this question/i })
+    ).toBeInTheDocument();
+  });
+
   it("shows loading state", () => {
     mockUseGetQuiz.mockReturnValue({
       data: undefined,

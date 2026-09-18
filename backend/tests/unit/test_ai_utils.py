@@ -6,14 +6,17 @@ import pytest
 from ai_utils import (
     DEFAULT_LLM_BASE_URL,
     QUIZ_SCHEMA,
+    ExplanationError,
     GeneratedQuiz,
     QuizGenerationError,
     _llm_base_url,
     _llm_model,
     _response_format,
     as_generated_quiz,
+    explain_quiz_question,
     extract_text_from_pdf,
     generate_quiz_from_text,
+    select_explanation_context,
     select_source_chunks,
 )
 
@@ -483,3 +486,92 @@ class TestQuestionValidation:
         result = generate_quiz_from_text("Some text", num_questions=1)
 
         assert result.questions[0]["correct_answer"] == 2
+
+
+class TestQuestionExplanation:
+    def test_selects_short_source_text_unchanged(self):
+        text = "Paris is the capital of France."
+        assert (
+            select_explanation_context(text, "What is the capital of France?") == text
+        )
+
+    def test_returns_nothing_for_blank_source_text(self):
+        assert select_explanation_context("   ", "A question?") == ""
+
+    def test_prefers_passages_that_overlap_the_question(self):
+        filler = "The history of ancient pottery spans many centuries of craft. " * 80
+        relevant = "The mitochondria is the powerhouse of the cell and produces ATP."
+        context = select_explanation_context(
+            filler + relevant + filler,
+            "What does the mitochondria produce?",
+            ["ATP", "DNA", "Glucose", "Oxygen"],
+        )
+
+        assert "mitochondria" in context.lower()
+        assert "ATP" in context
+
+    def test_falls_back_to_the_start_when_nothing_overlaps(self):
+        filler = "The history of ancient pottery spans many centuries of craft. " * 80
+        context = select_explanation_context(
+            filler,
+            "What is photosynthesis?",
+            ["Light", "Water", "Soil", "Wind"],
+            limit=400,
+        )
+
+        assert context.startswith("The history of ancient pottery")
+        assert len(context) <= 400
+
+    @patch("ai_utils._chat_completion")
+    def test_sends_the_question_and_source_without_a_quiz_schema(self, mock_complete):
+        mock_complete.return_value = "Paris is the capital of France."
+
+        result = explain_quiz_question(
+            question="What is the capital of France?",
+            options=["Berlin", "Paris", "London", "Madrid"],
+            correct_answer=1,
+            selected_answer=0,
+            source_text="France is a country in Europe. Paris is its capital.",
+            topic="Geography",
+        )
+
+        assert result == "Paris is the capital of France."
+        prompt = mock_complete.call_args.args[0]
+        kwargs = mock_complete.call_args.kwargs
+        assert kwargs["constrain_to_quiz_schema"] is False
+        assert kwargs["error_cls"] is ExplanationError
+        assert "What is the capital of France?" in prompt
+        assert "incorrect" in prompt
+        assert "Paris is its capital" in prompt
+        assert "Geography" in prompt
+
+    @patch("ai_utils.OpenAI")
+    def test_omits_the_quiz_schema_on_the_api_call(self, mock_openai_class):
+        client = mock_openai_class.return_value
+        message = MagicMock(content="Paris is the capital of France.")
+        client.chat.completions.create.return_value = MagicMock(
+            choices=[MagicMock(message=message)]
+        )
+
+        explain_quiz_question(
+            question="What is the capital of France?",
+            options=["Berlin", "Paris", "London", "Madrid"],
+            correct_answer=1,
+            selected_answer=1,
+        )
+
+        kwargs = client.chat.completions.create.call_args.kwargs
+        assert "response_format" not in kwargs
+        assert kwargs["temperature"] == 0.3
+        assert "study tutor" in kwargs["messages"][0]["content"].lower()
+
+    @patch("ai_utils._chat_completion")
+    def test_wraps_unexpected_failures(self, mock_complete):
+        mock_complete.side_effect = RuntimeError("timeout")
+
+        with pytest.raises(ExplanationError, match="Could not generate an explanation"):
+            explain_quiz_question(
+                question="What is 2+2?",
+                options=["3", "4", "5", "6"],
+                correct_answer=1,
+            )

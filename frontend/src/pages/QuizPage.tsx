@@ -204,6 +204,7 @@ const QuizPage = () => {
                   handleAnswerSelect(question.id, answerIndex)
                 }
                 showResults={submitted}
+                quizId={Number.parseInt(quiz.id, 10)}
               />
             );
           })}

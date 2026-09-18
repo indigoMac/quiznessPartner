@@ -1,5 +1,6 @@
 import type { FC } from "react";
 import type { QuizQuestion as QuizQuestionType } from "../types/api";
+import QuestionExplanation from "./QuestionExplanation";
 
 interface QuizQuestionProps {
   question: QuizQuestionType;
@@ -7,6 +8,7 @@ interface QuizQuestionProps {
   selectedAnswer?: number;
   onSelectAnswer: (index: number) => void;
   showResults?: boolean;
+  quizId?: number;
 }
 
 const QuizQuestion: FC<QuizQuestionProps> = ({
@@ -15,6 +17,7 @@ const QuizQuestion: FC<QuizQuestionProps> = ({
   selectedAnswer,
   onSelectAnswer,
   showResults = false,
+  quizId,
 }) => {
   const getOptionClasses = (index: number): string => {
     const baseClasses =
@@ -128,6 +131,13 @@ const QuizQuestion: FC<QuizQuestionProps> = ({
           </button>
         ))}
       </div>
+      {showResults && quizId != null && question.id != null && (
+        <QuestionExplanation
+          quizId={quizId}
+          questionId={question.id}
+          selectedAnswer={selectedAnswer}
+        />
+      )}
     </div>
   );
 };

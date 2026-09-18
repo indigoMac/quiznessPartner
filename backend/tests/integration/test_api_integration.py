@@ -727,3 +727,88 @@ def test_upload_document_rejects_unsupported_type(auth_token):
     )
     assert response.status_code == 400
     assert "Only PDF and TXT" in response.json()["detail"]
+
+
+@patch("main.generate_question_explanation")
+def test_explain_question(mock_explain):
+    mock_explain.return_value = "Paris is the capital of France."
+
+    response = client.post(
+        "/api/v1/quiz/1/questions/2/explain",
+        json={"selected_answer": 1},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"explanation": "Paris is the capital of France."}
+    mock_explain.assert_called_once()
+    assert mock_explain.call_args.args[1:] == (1, 2, 1)
+
+
+@patch("main.generate_question_explanation")
+def test_explain_question_not_found(mock_explain):
+    from services.explanation_service import QuestionNotFoundError
+
+    mock_explain.side_effect = QuestionNotFoundError()
+
+    response = client.post(
+        "/api/v1/quiz/1/questions/99/explain",
+        json={"selected_answer": 0},
+    )
+
+    assert response.status_code == 404
+    assert "Question not found" in response.json()["detail"]
+
+
+@patch("main.generate_question_explanation")
+def test_explain_quiz_not_found(mock_explain):
+    from services.explanation_service import QuizNotFoundError
+
+    mock_explain.side_effect = QuizNotFoundError()
+
+    response = client.post("/api/v1/quiz/999/questions/1/explain", json={})
+
+    assert response.status_code == 404
+    assert "Quiz not found" in response.json()["detail"]
+
+
+@patch("main.generate_question_explanation")
+def test_explain_invalid_selected_answer(mock_explain):
+    from services.explanation_service import InvalidSelectionError
+
+    mock_explain.side_effect = InvalidSelectionError(
+        "Selected answer is not a valid option for this question."
+    )
+
+    response = client.post(
+        "/api/v1/quiz/1/questions/1/explain",
+        json={"selected_answer": 9},
+    )
+
+    assert response.status_code == 400
+    assert "not a valid option" in response.json()["detail"]
+
+
+@patch("main.generate_question_explanation")
+def test_explain_llm_failure(mock_explain):
+    from ai_utils import ExplanationError
+
+    mock_explain.side_effect = ExplanationError(
+        "Could not generate an explanation. Please try again."
+    )
+
+    response = client.post(
+        "/api/v1/quiz/1/questions/1/explain",
+        json={"selected_answer": 0},
+    )
+
+    assert response.status_code == 502
+    assert "Could not generate an explanation" in response.json()["detail"]
+
+
+def test_explain_rejects_negative_selected_answer():
+    response = client.post(
+        "/api/v1/quiz/1/questions/1/explain",
+        json={"selected_answer": -1},
+    )
+
+    assert response.status_code == 422

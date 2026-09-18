@@ -35,6 +35,8 @@ vi.mock("axios", () => {
 
   return {
     AxiosHeaders: MockAxiosHeaders,
+    isAxiosError: (error: unknown) =>
+      Boolean(error && typeof error === "object" && "isAxiosError" in error),
     default: {
       create: vi.fn(() => ({
         post: mockPost,
@@ -57,6 +59,7 @@ import {
   checkHealth,
   listMyQuizzes,
   practiceStudyTopic,
+  explainQuestion,
 } from "../quizApi";
 import API_BASE_URL from "../config";
 
@@ -188,6 +191,18 @@ describe("Quiz API", () => {
     const [url, payload] = postCall.mock.calls[0];
     expect(url).toBe("/api/v1/submit-answer");
     expect(payload).toEqual(data);
+  });
+
+  it("explains a question", async () => {
+    const data = { quiz_id: 123, question_id: 4, selected_answer: 1 };
+    await explainQuestion(data);
+
+    const mockAxios = (await import("axios")).default;
+    const instance = mockAxios.create();
+    const postCall = instance.post as unknown as jest.Mock;
+    const [url, payload] = postCall.mock.calls[0];
+    expect(url).toBe("/api/v1/quiz/123/questions/4/explain");
+    expect(payload).toEqual({ selected_answer: 1 });
   });
 
   it("checks health", async () => {

@@ -62,6 +62,11 @@ def create_study_topic(
     return study_topic
 
 
+def get_study_topic(db: Session, study_topic_id: int) -> Optional[StudyTopic]:
+    """Get a study topic by ID."""
+    return db.query(StudyTopic).filter(StudyTopic.id == study_topic_id).first()
+
+
 def get_study_topic_for_user(
     db: Session, study_topic_id: int, user_id: int
 ) -> Optional[StudyTopic]:
@@ -69,6 +74,17 @@ def get_study_topic_for_user(
     return (
         db.query(StudyTopic)
         .filter(StudyTopic.id == study_topic_id, StudyTopic.user_id == user_id)
+        .first()
+    )
+
+
+def get_quiz_question(
+    db: Session, quiz_id: int, question_id: int
+) -> Optional[Question]:
+    """Get a question that belongs to a specific quiz."""
+    return (
+        db.query(Question)
+        .filter(Question.id == question_id, Question.quiz_id == quiz_id)
         .first()
     )
 

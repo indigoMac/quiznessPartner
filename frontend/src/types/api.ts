@@ -85,3 +85,13 @@ export interface PracticeStudyTopicForm {
   study_topic_id: number;
   num_questions?: number;
 }
+
+export interface ExplainQuestionRequest {
+  quiz_id: number;
+  question_id: number;
+  selected_answer?: number;
+}
+
+export interface ExplainQuestionResponse {
+  explanation: string;
+}
