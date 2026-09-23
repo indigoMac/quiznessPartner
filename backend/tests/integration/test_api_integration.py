@@ -154,6 +154,21 @@ def test_generate_quiz_invalid_input(auth_token):
     assert response.status_code == 422  # Unprocessable Entity
 
 
+def test_generate_quiz_rejects_invalid_difficulty(auth_token):
+    response = client.post(
+        "/api/v1/generate-quiz",
+        headers=auth_token,
+        json={
+            "content": "Test content",
+            "topic": "Geography",
+            "num_questions": 1,
+            "difficulty": "impossible",
+        },
+    )
+
+    assert response.status_code == 422
+
+
 @patch("main.extract_text_from_pdf")
 @patch("main.generate_quiz_from_text")
 @patch("main.create_quiz")
@@ -568,6 +583,39 @@ def test_generate_quiz_persists_generated_title(mock_generate_quiz, auth_token):
     assert listed["study_topics"][0]["title"] == "Geography"
     assert listed["study_topics"][0]["can_practice"] is True
     assert data["study_topic_id"] == listed["study_topics"][0]["id"]
+    assert data["difficulty"] == "medium"
+    assert listed["quizzes"][0]["difficulty"] == "medium"
+
+
+@patch("main.generate_quiz_from_text")
+def test_generate_quiz_persists_difficulty(mock_generate_quiz, auth_token):
+    mock_generate_quiz.return_value = GeneratedQuiz(
+        title="European Capitals",
+        topic="Geography",
+        questions=[
+            {
+                "question": "What is the capital of France?",
+                "options": ["Berlin", "Paris", "London", "Madrid"],
+                "correct_answer": 1,
+            }
+        ],
+    )
+
+    response = client.post(
+        "/api/v1/generate-quiz",
+        headers=auth_token,
+        json={"content": "Test content", "num_questions": 1, "difficulty": "hard"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["difficulty"] == "hard"
+    assert mock_generate_quiz.call_args.kwargs["difficulty"] == "hard"
+
+    listed = client.get("/api/v1/quizzes", headers=auth_token).json()
+    assert listed["quizzes"][0]["difficulty"] == "hard"
+
+    fetched = client.get(f"/api/v1/quiz/{data['id']}").json()
+    assert fetched["difficulty"] == "hard"
 
 
 @patch("main.generate_quiz_from_text")

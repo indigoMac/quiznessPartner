@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from db import get_session_local
 from models.question import Question
-from models.quiz import Quiz
+from models.quiz import DEFAULT_QUIZ_DIFFICULTY, Quiz
 from models.result import Result
 from models.study_topic import StudyTopic
 
@@ -26,6 +26,7 @@ def create_quiz(
     topic: Optional[str] = None,
     user_id: Optional[int] = None,
     study_topic_id: Optional[int] = None,
+    difficulty: str = DEFAULT_QUIZ_DIFFICULTY,
 ):
     """Create a new quiz in the database."""
     quiz = Quiz(
@@ -33,6 +34,7 @@ def create_quiz(
         topic=topic,
         user_id=user_id,
         study_topic_id=study_topic_id,
+        difficulty=difficulty or DEFAULT_QUIZ_DIFFICULTY,
     )
     db.add(quiz)
     db.commit()
@@ -154,6 +156,7 @@ def get_quiz_with_questions(db: Session, quiz_id: int):
             "id": quiz.id,
             "title": quiz.title,
             "topic": quiz.topic,
+            "difficulty": quiz.difficulty or DEFAULT_QUIZ_DIFFICULTY,
             "study_topic_id": quiz.study_topic_id,
             "questions": questions_data,
         }
@@ -228,6 +231,7 @@ def list_user_quizzes(db: Session, user_id: int) -> Tuple[List[dict], int, int]:
                 "attempt_count": attempts["attempt_count"],
                 "best_score": attempts["best_score"],
                 "study_topic_id": quiz.study_topic_id,
+                "difficulty": quiz.difficulty or DEFAULT_QUIZ_DIFFICULTY,
             }
         )
 

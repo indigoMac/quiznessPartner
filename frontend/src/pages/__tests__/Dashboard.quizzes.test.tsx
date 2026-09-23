@@ -70,6 +70,7 @@ describe("Dashboard with quizzes", () => {
     );
 
     expect(screen.getByText("Quiz on Geography")).toBeInTheDocument();
+    expect(screen.getByText(/Medium/)).toBeInTheDocument();
     expect(screen.getByText(/Best score: 4/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /quiz on geography/i })).toHaveAttribute(
       "href",

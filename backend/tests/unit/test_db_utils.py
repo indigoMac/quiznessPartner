@@ -4,6 +4,7 @@ from db_utils import (
     create_quiz,
     create_study_topic,
     get_quiz_question,
+    get_quiz_with_questions,
     list_user_quizzes,
     list_user_study_topics,
     record_quiz_result,
@@ -41,6 +42,7 @@ class TestListUserQuizzes:
         assert quizzes[0]["attempt_count"] == 0
         assert quizzes[0]["best_score"] is None
         assert quizzes[0]["study_topic_id"] is None
+        assert quizzes[0]["difficulty"] == "medium"
 
     def test_includes_attempt_stats_and_completed_count(self, db_session):
         user = UserFactory.create(db_session)
@@ -122,6 +124,23 @@ class TestRecordQuizResult:
 
         stored = db_session.query(Result).filter(Result.id == result.id).first()
         assert stored.user_id is None
+
+
+class TestCreateQuiz:
+    def test_stores_requested_difficulty(self, db_session):
+        user = UserFactory.create(db_session)
+        quiz = create_quiz(
+            db_session,
+            title="Hard Capitals",
+            topic="Geo",
+            user_id=user.id,
+            difficulty="hard",
+        )
+
+        stored = get_quiz_with_questions(db_session, quiz.id)
+
+        assert stored["difficulty"] == "hard"
+        assert stored["title"] == "Hard Capitals"
 
 
 class TestGetQuizQuestion:

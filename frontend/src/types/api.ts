@@ -1,3 +1,12 @@
+export const QUIZ_DIFFICULTIES = ["easy", "medium", "hard"] as const;
+export type QuizDifficulty = (typeof QUIZ_DIFFICULTIES)[number];
+export const DEFAULT_QUIZ_DIFFICULTY: QuizDifficulty = "medium";
+
+export function formatQuizDifficulty(difficulty?: string | null): string {
+  const value = (difficulty || DEFAULT_QUIZ_DIFFICULTY).toLowerCase();
+  return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
+}
+
 // Quiz question types
 export interface QuizQuestion {
   id: number;
@@ -12,6 +21,7 @@ export interface QuizResponse {
   title: string;
   topic?: string;
   study_topic_id?: number | null;
+  difficulty?: QuizDifficulty;
   questions: QuizQuestion[];
   created_at?: string;
 }
@@ -36,6 +46,7 @@ export interface UploadDocumentForm {
   file: File;
   topic?: string;
   num_questions?: number;
+  difficulty?: QuizDifficulty;
 }
 
 // Quiz text generation form data
@@ -43,12 +54,14 @@ export interface GenerateQuizForm {
   content: string;
   topic?: string;
   num_questions?: number;
+  difficulty?: QuizDifficulty;
 }
 
 export interface GenerateQuizFromUrlForm {
   url: string;
   topic?: string;
   num_questions?: number;
+  difficulty?: QuizDifficulty;
 }
 
 export interface QuizSummary {
@@ -60,6 +73,7 @@ export interface QuizSummary {
   attempt_count: number;
   best_score: number | null;
   study_topic_id?: number | null;
+  difficulty?: QuizDifficulty;
 }
 
 export interface StudyTopicSummary {
@@ -84,6 +98,7 @@ export interface QuizListResponse {
 export interface PracticeStudyTopicForm {
   study_topic_id: number;
   num_questions?: number;
+  difficulty?: QuizDifficulty;
 }
 
 export interface ExplainQuestionRequest {

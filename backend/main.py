@@ -9,7 +9,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ai_utils import (
+    DEFAULT_QUIZ_DIFFICULTY,
     ExplanationError,
+    QuizDifficulty,
     QuizGenerationError,
     as_generated_quiz,
     extract_text_from_pdf,
@@ -91,16 +93,19 @@ class QuizRequest(BaseModel):
     content: str
     topic: Optional[str] = None
     num_questions: int = Field(default=5, ge=1, le=20)
+    difficulty: QuizDifficulty = DEFAULT_QUIZ_DIFFICULTY
 
 
 class UrlQuizRequest(BaseModel):
     url: str
     topic: Optional[str] = None
     num_questions: int = Field(default=5, ge=1, le=20)
+    difficulty: QuizDifficulty = DEFAULT_QUIZ_DIFFICULTY
 
 
 class PracticeRequest(BaseModel):
     num_questions: int = Field(default=5, ge=1, le=20)
+    difficulty: QuizDifficulty = DEFAULT_QUIZ_DIFFICULTY
 
 
 class AnswerSubmission(BaseModel):
@@ -114,6 +119,7 @@ class QuizResponse(BaseModel):
     topic: Optional[str] = None
     study_topic_id: Optional[int] = None
     questions: List[Dict[str, Any]]
+    difficulty: str = DEFAULT_QUIZ_DIFFICULTY
     # How many were asked for. Source material sometimes cannot support the
     # full request, so clients compare this against len(questions) to tell
     # the user they got fewer. Not persisted; it describes the request.
@@ -144,6 +150,7 @@ class QuizSummary(BaseModel):
     attempt_count: int
     best_score: Optional[int] = None
     study_topic_id: Optional[int] = None
+    difficulty: str = DEFAULT_QUIZ_DIFFICULTY
 
 
 class StudyTopicSummary(BaseModel):
@@ -196,6 +203,7 @@ def _persist_generated_quiz(
     source_url: Optional[str] = None,
     study_topic_id: Optional[int] = None,
     requested_questions: Optional[int] = None,
+    difficulty: str = DEFAULT_QUIZ_DIFFICULTY,
 ) -> QuizResponse:
     if study_topic_id is not None:
         study_topic = get_study_topic_for_user(db, study_topic_id, user_id)
@@ -220,6 +228,7 @@ def _persist_generated_quiz(
         generated.topic,
         user_id,
         study_topic.id,
+        difficulty=difficulty,
     )
     add_questions_to_quiz(db, quiz.id, generated.questions)
     complete_quiz = get_quiz_with_questions(db, quiz.id)
@@ -229,6 +238,7 @@ def _persist_generated_quiz(
         topic=complete_quiz["topic"],
         study_topic_id=complete_quiz.get("study_topic_id"),
         questions=complete_quiz["questions"],
+        difficulty=complete_quiz.get("difficulty") or difficulty,
         requested_questions=requested_questions,
     )
 
@@ -255,7 +265,10 @@ async def generate_quiz(
     try:
         generated = as_generated_quiz(
             generate_quiz_from_text(
-                request.content, request.topic, request.num_questions
+                request.content,
+                topic=request.topic,
+                num_questions=request.num_questions,
+                difficulty=request.difficulty,
             ),
             request.topic,
         )
@@ -265,6 +278,7 @@ async def generate_quiz(
             current_user.id,
             source_text=request.content,
             requested_questions=request.num_questions,
+            difficulty=request.difficulty,
         )
     except QuizGenerationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -279,6 +293,7 @@ async def upload_document(
     file: UploadFile = File(...),
     topic: Optional[str] = Form(None),
     num_questions: int = Form(5),
+    difficulty: QuizDifficulty = Form(DEFAULT_QUIZ_DIFFICULTY),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -303,7 +318,12 @@ async def upload_document(
             )
 
         generated = as_generated_quiz(
-            generate_quiz_from_text(text, topic, num_questions),
+            generate_quiz_from_text(
+                text,
+                topic=topic,
+                num_questions=num_questions,
+                difficulty=difficulty,
+            ),
             topic,
         )
         return _persist_generated_quiz(
@@ -312,6 +332,7 @@ async def upload_document(
             current_user.id,
             source_text=text,
             requested_questions=num_questions,
+            difficulty=difficulty,
         )
     except QuizGenerationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -332,7 +353,12 @@ async def generate_quiz_from_url(
         text, page_title = fetch_url_text(request.url)
         topic = request.topic or page_title
         generated = as_generated_quiz(
-            generate_quiz_from_text(text, topic, request.num_questions),
+            generate_quiz_from_text(
+                text,
+                topic=topic,
+                num_questions=request.num_questions,
+                difficulty=request.difficulty,
+            ),
             topic,
         )
         return _persist_generated_quiz(
@@ -342,6 +368,7 @@ async def generate_quiz_from_url(
             source_text=text,
             source_url=request.url,
             requested_questions=request.num_questions,
+            difficulty=request.difficulty,
         )
     except UrlFetchError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -372,6 +399,7 @@ async def list_quizzes(
                 attempt_count=item["attempt_count"],
                 best_score=item["best_score"],
                 study_topic_id=item.get("study_topic_id"),
+                difficulty=item.get("difficulty") or DEFAULT_QUIZ_DIFFICULTY,
             )
             for item in quizzes
         ],
@@ -394,6 +422,7 @@ async def list_quizzes(
                         attempt_count=quiz["attempt_count"],
                         best_score=quiz["best_score"],
                         study_topic_id=quiz.get("study_topic_id"),
+                        difficulty=quiz.get("difficulty") or DEFAULT_QUIZ_DIFFICULTY,
                     )
                     for quiz in item["quizzes"]
                 ],
@@ -441,6 +470,7 @@ async def practice_study_topic(
                 study_topic.topic,
                 request.num_questions,
                 existing_questions=list_study_topic_questions(db, study_topic.id),
+                difficulty=request.difficulty,
             ),
             study_topic.topic,
         )
@@ -450,6 +480,7 @@ async def practice_study_topic(
             current_user.id,
             study_topic_id=study_topic.id,
             requested_questions=request.num_questions,
+            difficulty=request.difficulty,
         )
     except QuizGenerationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc

@@ -6,7 +6,7 @@ import tempfile
 import time
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Literal, Optional, Sequence
 
 import fitz  # PyMuPDF
 from openai import NotFoundError, OpenAI
@@ -72,6 +72,40 @@ QUIZ_SYSTEM_PROMPT = (
     "You are a helpful assistant that generates quiz questions "
     "in JSON format. Only return valid JSON."
 )
+
+QuizDifficulty = Literal["easy", "medium", "hard"]
+DEFAULT_QUIZ_DIFFICULTY: QuizDifficulty = "medium"
+DIFFICULTY_INSTRUCTIONS = {
+    "easy": (
+        "Make every question easy. Test recall of key facts, definitions, "
+        "and main ideas from the text. Use simple, direct wording. "
+        "Avoid trick questions, inference, and multi-step reasoning."
+    ),
+    "medium": (
+        "Make every question moderately challenging but fair. Mix recall "
+        "with straightforward application. Wrong answers should be plausible."
+    ),
+    "hard": (
+        "Make every question difficult. Test deeper understanding, "
+        "application, and synthesis. Require careful reading of the text. "
+        "Use close, plausible distractors. Avoid trivia and trick wording."
+    ),
+}
+
+
+def normalize_quiz_difficulty(difficulty: Optional[str]) -> QuizDifficulty:
+    """Return a supported difficulty, defaulting to medium."""
+    if not difficulty:
+        return DEFAULT_QUIZ_DIFFICULTY
+    value = difficulty.strip().lower()
+    if value == "easy":
+        return "easy"
+    if value == "hard":
+        return "hard"
+    if value == "medium":
+        return "medium"
+    return DEFAULT_QUIZ_DIFFICULTY
+
 
 EXPLAIN_SYSTEM_PROMPT = (
     "You are a study tutor. Explain quiz questions in plain language. "
@@ -490,6 +524,8 @@ def _build_quiz_prompt(
     topic: Optional[str],
     num_questions: int,
     existing_questions: Optional[List[Dict[str, Any]]] = None,
+    *,
+    difficulty: str = DEFAULT_QUIZ_DIFFICULTY,
 ) -> str:
     topic_str = (
         f"on the topic of {topic}" if topic else "based on the following content"
@@ -498,10 +534,14 @@ def _build_quiz_prompt(
     if existing_questions:
         listed = "; ".join(item.get("question", "") for item in existing_questions)
         avoid = f"\nDo not repeat these questions: {listed}\n"
+    level = normalize_quiz_difficulty(difficulty)
+    difficulty_instruction = DIFFICULTY_INSTRUCTIONS[level]
 
     return f"""
     Create a multiple-choice quiz {topic_str}.
-    Generate exactly {num_questions} challenging but fair questions.
+    Generate exactly {num_questions} questions.
+    Difficulty: {level}.
+    {difficulty_instruction}
     The 'questions' array must contain exactly {num_questions} items.
     {avoid}
     Text: {text}
@@ -523,8 +563,16 @@ def _generate_from_chunk(
     topic: Optional[str],
     num_questions: int,
     existing_questions: Optional[List[Dict[str, Any]]] = None,
+    *,
+    difficulty: str = DEFAULT_QUIZ_DIFFICULTY,
 ) -> GeneratedQuiz:
-    prompt = _build_quiz_prompt(text, topic, num_questions, existing_questions)
+    prompt = _build_quiz_prompt(
+        text,
+        topic,
+        num_questions,
+        existing_questions,
+        difficulty=difficulty,
+    )
     try:
         result = _chat_completion(prompt)
     except QuizGenerationError:
@@ -770,6 +818,7 @@ def _top_up_questions(
     collector: _QuestionCollector,
     chunks: List[str],
     topic: Optional[str],
+    difficulty: str,
 ) -> None:
     """Ask for more questions when the pass over the chunks came up short.
 
@@ -790,6 +839,7 @@ def _top_up_questions(
                 topic,
                 request,
                 collector.recent(),
+                difficulty=difficulty,
             )
         except QuizGenerationError:
             logger.warning("Top-up request %s failed", attempt + 1)
@@ -804,6 +854,7 @@ def generate_quiz_from_text(
     topic: Optional[str] = None,
     num_questions: int = 5,
     existing_questions: Optional[List[Dict[str, Any]]] = None,
+    difficulty: Optional[str] = None,
 ) -> GeneratedQuiz:
     """Generate a quiz from text using the configured LLM provider.
 
@@ -816,7 +867,14 @@ def generate_quiz_from_text(
     token = _active_metrics.set(metrics)
     started = time.perf_counter()
     try:
-        quiz = _generate_quiz(text, topic, num_questions, existing_questions, metrics)
+        quiz = _generate_quiz(
+            text,
+            topic,
+            num_questions,
+            existing_questions,
+            metrics,
+            normalize_quiz_difficulty(difficulty),
+        )
     finally:
         _active_metrics.reset(token)
         metrics.duration_ms = (time.perf_counter() - started) * 1000
@@ -830,6 +888,7 @@ def _generate_quiz(
     num_questions: int,
     existing_questions: Optional[List[Dict[str, Any]]],
     metrics: GenerationMetrics,
+    difficulty: str,
 ) -> GeneratedQuiz:
     if not text or not text.strip():
         raise QuizGenerationError("No text was provided to generate a quiz from.")
@@ -850,7 +909,9 @@ def _generate_quiz(
         if count <= 0:
             continue
         try:
-            part = _generate_from_chunk(chunk, topic, count, collector.recent())
+            part = _generate_from_chunk(
+                chunk, topic, count, collector.recent(), difficulty=difficulty
+            )
         except QuizGenerationError:
             if not collector.questions:
                 raise
@@ -862,7 +923,7 @@ def _generate_quiz(
             inferred_topic = part.topic
         collector.add(part.questions)
 
-    _top_up_questions(collector, chunks, topic)
+    _top_up_questions(collector, chunks, topic, difficulty)
     metrics.delivered = len(collector.questions)
 
     if not collector.questions:

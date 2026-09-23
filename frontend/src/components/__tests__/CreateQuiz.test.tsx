@@ -116,7 +116,7 @@ describe("CreateQuiz", () => {
     expect(errorMessage).toBeInTheDocument();
   });
 
-  it("allows setting topic and number of questions", async () => {
+    it("allows setting topic, question count, and difficulty", async () => {
     const user = userEvent.setup();
     render(<CreateQuiz />, { wrapper });
 
@@ -124,15 +124,20 @@ describe("CreateQuiz", () => {
       "Leave blank to infer a topic"
     );
     const numQuestionsInput = screen.getByLabelText("Number of Questions");
+    const difficultyInput = screen.getByLabelText("Difficulty");
+
+    expect(difficultyInput).toHaveValue("medium");
 
     await act(async () => {
       await user.type(topicInput, "History");
       await user.clear(numQuestionsInput);
       await user.type(numQuestionsInput, "10");
+      await user.selectOptions(difficultyInput, "hard");
     });
 
     expect(topicInput).toHaveValue("History");
     expect(numQuestionsInput).toHaveValue(10);
+    expect(difficultyInput).toHaveValue("hard");
   });
 
   it("handles file upload", async () => {
@@ -176,6 +181,7 @@ describe("CreateQuiz", () => {
       content: "Sample text content",
       topic: "Sample Topic",
       num_questions: 5,
+      difficulty: "medium",
     });
   });
 
@@ -196,6 +202,27 @@ describe("CreateQuiz", () => {
       url: "https://example.com/notes",
       topic: undefined,
       num_questions: 5,
+      difficulty: "medium",
+    });
+  });
+
+  it("submits the selected difficulty", async () => {
+    render(<CreateQuiz />, { wrapper });
+
+    fireEvent.click(screen.getByText(/enter text/i));
+    fireEvent.change(screen.getByLabelText(/enter your text/i), {
+      target: { value: "Sample text content" },
+    });
+    fireEvent.change(screen.getByLabelText("Difficulty"), {
+      target: { value: "hard" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /create quiz/i }));
+
+    expect(mockMutateAsync).toHaveBeenCalledWith({
+      content: "Sample text content",
+      topic: undefined,
+      num_questions: 5,
+      difficulty: "hard",
     });
   });
 

@@ -106,6 +106,7 @@ describe("QuizPage", () => {
     render(<QuizPage />, { wrapper });
 
     expect(screen.getByText("Test Quiz")).toBeInTheDocument();
+    expect(screen.getByText("Medium")).toBeInTheDocument();
     expect(
       screen.getByText("What is the capital of France?")
     ).toBeInTheDocument();

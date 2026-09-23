@@ -3,6 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import { useMyQuizzes, usePracticeStudyTopic } from "../hooks/useQuiz";
 import Button from "../components/Button";
 import type { QuizSummary, StudyTopicSummary } from "../types/api";
+import { formatQuizDifficulty } from "../types/api";
 
 function formatDate(value?: string | null) {
   if (!value) return "Unknown date";
@@ -22,8 +23,9 @@ function QuizRow({ quiz }: { quiz: QuizSummary }) {
           <div className="min-w-0">
             <p className="font-semibold">{quiz.title}</p>
             <p className="text-sm text-stone-600 dark:text-stone-400">
-              {quiz.topic || "No topic"} · {quiz.question_count} questions ·
-              Created {formatDate(quiz.created_at)}
+              {quiz.topic || "No topic"} · {quiz.question_count} questions ·{" "}
+              {formatQuizDifficulty(quiz.difficulty)} · Created{" "}
+              {formatDate(quiz.created_at)}
             </p>
           </div>
           <p className="text-sm text-stone-500 dark:text-stone-400 sm:whitespace-nowrap">
@@ -94,6 +96,7 @@ export default function Dashboard() {
       const result = await practiceMutation.mutateAsync({
         study_topic_id: topic.id,
         num_questions: topic.quizzes[0]?.question_count || 5,
+        difficulty: topic.quizzes[0]?.difficulty,
       });
       navigate(`/quiz/${result.id}`);
     } catch (practiceError) {

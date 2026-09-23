@@ -60,6 +60,10 @@ export const uploadDocument = async (
     formData.append("num_questions", data.num_questions.toString());
   }
 
+  if (data.difficulty) {
+    formData.append("difficulty", data.difficulty);
+  }
+
   const response = await api.post<QuizResponse>(
     "/api/v1/upload-document",
     formData,
@@ -140,7 +144,10 @@ export const practiceStudyTopic = async (
 ): Promise<QuizResponse> => {
   const response = await api.post<QuizResponse>(
     `/api/v1/study-topics/${data.study_topic_id}/practice`,
-    { num_questions: data.num_questions ?? 5 }
+    {
+      num_questions: data.num_questions ?? 5,
+      difficulty: data.difficulty ?? "medium",
+    }
   );
   return response.data;
 };

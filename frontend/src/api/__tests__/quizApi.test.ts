@@ -154,7 +154,7 @@ describe("Quiz API", () => {
     const postCall = instance.post as unknown as jest.Mock;
     const [url, payload] = postCall.mock.calls[0];
     expect(url).toBe("/api/v1/study-topics/7/practice");
-    expect(payload).toEqual({ num_questions: 5 });
+    expect(payload).toEqual({ num_questions: 5, difficulty: "medium" });
   });
 
   it("uploads a document", async () => {

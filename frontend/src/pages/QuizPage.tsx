@@ -5,6 +5,7 @@ import Button from "../components/Button";
 import QuizQuestion from "../components/QuizQuestion";
 import QuizResults from "../components/QuizResults";
 import type { QuizResult } from "../types/api";
+import { formatQuizDifficulty } from "../types/api";
 
 const QuizPage = () => {
   const { id } = useParams<{ id: string }>();
@@ -119,6 +120,7 @@ const QuizPage = () => {
       const result = await practiceMutation.mutateAsync({
         study_topic_id: quiz.study_topic_id,
         num_questions: quiz.questions.length || 5,
+        difficulty: quiz.difficulty,
       });
       navigate(`/quiz/${result.id}`);
     } catch (practiceError) {
@@ -153,6 +155,9 @@ const QuizPage = () => {
             <h1 className="font-display text-2xl font-semibold text-stone-900 dark:text-stone-100">
               {quiz.title || "Quiz"}
             </h1>
+            <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
+              {formatQuizDifficulty(quiz.difficulty)}
+            </p>
           </div>
           {quiz.study_topic_id && (
             <Button

@@ -5,6 +5,7 @@ import pytest
 
 from ai_utils import (
     DEFAULT_LLM_BASE_URL,
+    DIFFICULTY_INSTRUCTIONS,
     QUIZ_SCHEMA,
     ExplanationError,
     GeneratedQuiz,
@@ -107,6 +108,40 @@ class TestAIUtils:
 
         assert result.title == "European Capitals"
         assert result.topic == "Geography"
+
+    @patch("ai_utils._chat_completion")
+    def test_generate_quiz_includes_difficulty_in_prompt(self, mock_openai):
+        mock_openai.return_value = _quiz_payload(_question("Q1?"))
+
+        generate_quiz_from_text(
+            "Short source text.", num_questions=1, difficulty="hard"
+        )
+
+        prompt = mock_openai.call_args.args[0]
+        assert "Difficulty: hard." in prompt
+        assert DIFFICULTY_INSTRUCTIONS["hard"] in prompt
+
+    @patch("ai_utils._chat_completion")
+    def test_generate_quiz_defaults_to_medium_difficulty(self, mock_openai):
+        mock_openai.return_value = _quiz_payload(_question("Q1?"))
+
+        generate_quiz_from_text("Short source text.", num_questions=1)
+
+        prompt = mock_openai.call_args.args[0]
+        assert "Difficulty: medium." in prompt
+        assert DIFFICULTY_INSTRUCTIONS["medium"] in prompt
+
+    @patch("ai_utils._chat_completion")
+    def test_generate_quiz_falls_back_to_medium_for_unknown_difficulty(
+        self, mock_openai
+    ):
+        mock_openai.return_value = _quiz_payload(_question("Q1?"))
+
+        generate_quiz_from_text(
+            "Short source text.", num_questions=1, difficulty="insane"
+        )
+
+        assert "Difficulty: medium." in mock_openai.call_args.args[0]
 
     @patch("ai_utils._chat_completion")
     def test_generate_quiz_avoids_existing_questions(self, mock_openai):
