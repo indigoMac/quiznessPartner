@@ -1,4 +1,5 @@
 import io
+import struct
 import wave
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -91,6 +92,38 @@ def test_render_episode_audio_times_each_script_segment(monkeypatch):
 def test_concatenate_wavs_keeps_the_sum_of_durations():
     combined = concatenate_wavs([_silence_wav(1.0), _silence_wav(0.5)])
     assert wav_duration_seconds(combined) == pytest.approx(1.5)
+
+
+def _wav_with_placeholder_frame_count(pcm: bytes, rate: int = 8000) -> bytes:
+    """A WAV whose header claims 0xFFFFFFFF data bytes, like some speech APIs."""
+    channels = 1
+    width = 2
+    return struct.pack(
+        "<4sL4s4sLHHLLHH4sL",
+        b"RIFF",
+        0xFFFFFFFF,
+        b"WAVE",
+        b"fmt ",
+        16,
+        1,
+        channels,
+        rate,
+        channels * rate * width,
+        channels * width,
+        width * 8,
+        b"data",
+        0xFFFFFFFF,
+    ) + pcm
+
+
+def test_concatenate_wavs_ignores_a_placeholder_frame_count():
+    one_second = b"\x00\x00" * 8000
+    clip = _wav_with_placeholder_frame_count(one_second)
+    with wave.open(io.BytesIO(clip), "rb") as audio:
+        assert audio.getnframes() == 2147483647
+
+    combined = concatenate_wavs([clip, clip])
+    assert wav_duration_seconds(combined) == pytest.approx(2.0)
 
 
 def test_audio_generation_expires_after_fifteen_minutes():

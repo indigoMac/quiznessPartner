@@ -127,33 +127,51 @@ def wav_duration_seconds(data: bytes) -> float:
     return frames / float(rate)
 
 
+def _read_pcm(audio: wave.Wave_read) -> bytes:
+    """Read the samples that are actually in the file.
+
+    Speech responses often leave a placeholder frame count in the header,
+    commonly 2147483647. Copying that count into a new file overflows the
+    32-bit WAV size field.
+    """
+    declared = audio.getnframes()
+    if declared <= 0:
+        raise AudioSynthesisError("A speech segment had no audio.")
+    pcm = audio.readframes(declared)
+    if not pcm:
+        raise AudioSynthesisError("A speech segment had no audio.")
+    return pcm
+
+
 def concatenate_wavs(parts: Sequence[bytes]) -> bytes:
     """Join WAV pieces that share channels, width, and sample rate."""
     if not parts:
         raise AudioSynthesisError("No speech audio to combine.")
     frames: List[bytes] = []
-    params = None
+    layout = None
     for part in parts:
         try:
             with wave.open(io.BytesIO(part), "rb") as audio:
-                if params is None:
-                    params = audio.getparams()
-                elif (
-                    audio.getnchannels(),
-                    audio.getsampwidth(),
-                    audio.getframerate(),
-                ) != (params.nchannels, params.sampwidth, params.framerate):
+                channels = audio.getnchannels()
+                width = audio.getsampwidth()
+                rate = audio.getframerate()
+                if layout is None:
+                    layout = (channels, width, rate)
+                elif (channels, width, rate) != layout:
                     raise AudioSynthesisError(
                         "Speech segments did not use the same audio format."
                     )
-                frames.append(audio.readframes(audio.getnframes()))
+                frames.append(_read_pcm(audio))
         except AudioSynthesisError:
             raise
         except wave.Error as exc:
             raise AudioSynthesisError("Speech audio was not a WAV file.") from exc
+    channels, width, rate = layout
     buffer = io.BytesIO()
     with wave.open(buffer, "wb") as audio:
-        audio.setparams(params)
+        audio.setnchannels(channels)
+        audio.setsampwidth(width)
+        audio.setframerate(rate)
         for chunk in frames:
             audio.writeframes(chunk)
     return buffer.getvalue()
