@@ -12,6 +12,7 @@ from env_loader import load_app_env
 
 # Import all models so Alembic can detect them
 from models.base import Base
+from models.episode import Episode  # noqa: F401
 from models.question import Question  # noqa: F401
 from models.quiz import Quiz  # noqa: F401
 from models.result import Result  # noqa: F401

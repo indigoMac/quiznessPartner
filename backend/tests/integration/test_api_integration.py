@@ -13,6 +13,7 @@ from auth.auth_utils import get_password_hash
 from db_utils import get_db
 from main import app
 from models.base import Base
+from models.episode import Episode
 from models.question import Question
 from models.quiz import Quiz
 from models.result import Result
@@ -1029,3 +1030,141 @@ def test_save_study_material_keeps_the_topic_when_indexing_fails(
     assert response.json()["title"] == "Biology"
     assert _topic_count() == 1
     mock_index.assert_called_once()
+
+
+def _episode_script(title: str, word: str) -> str:
+    line = " ".join([word] * 700)
+    return json.dumps(
+        {
+            "title": title,
+            "segments": [
+                {"chapter": "Opening", "speaker": "host_a", "text": line},
+                {"chapter": "Opening", "speaker": "host_b", "text": line},
+            ],
+        }
+    )
+
+
+def _episode_count() -> int:
+    db = TestingSessionLocal()
+    try:
+        return db.query(Episode).count()
+    finally:
+        db.close()
+
+
+def _save_topic_without_source(user_email: str = "test@example.com") -> int:
+    db = TestingSessionLocal()
+    try:
+        user = db.query(User).filter(User.email == user_email).first()
+        topic = StudyTopic(
+            user_id=user.id,
+            title="Empty topic",
+            source_text=None,
+        )
+        db.add(topic)
+        db.commit()
+        return topic.id
+    finally:
+        db.close()
+
+
+@patch("ai_utils._chat_completion")
+def test_generate_episode_persists_and_replaces(mock_completion, auth_token):
+    created = client.post(
+        "/api/v1/study-topics",
+        headers=auth_token,
+        data={"content": "Cells divide by mitosis.", "topic": "Biology"},
+    ).json()
+
+    missing = client.get(
+        f"/api/v1/study-topics/{created['id']}/episode",
+        headers=auth_token,
+    )
+    assert missing.status_code == 404
+
+    mock_completion.return_value = _episode_script("First lesson", "alpha")
+    first = client.post(
+        f"/api/v1/study-topics/{created['id']}/episode",
+        headers=auth_token,
+    )
+    assert first.status_code == 200
+    body = first.json()
+    assert body["status"] == "ready"
+    assert body["title"] == "First lesson"
+    assert body["error_message"] is None
+    assert [line["speaker"] for line in body["script"]] == ["host_a", "host_b"]
+    assert "alpha" in body["script"][0]["text"]
+    assert _episode_count() == 1
+
+    mock_completion.return_value = _episode_script("Second lesson", "beta")
+    second = client.post(
+        f"/api/v1/study-topics/{created['id']}/episode",
+        headers=auth_token,
+    )
+    assert second.status_code == 200
+    replaced = second.json()
+    assert replaced["id"] == body["id"]
+    assert replaced["status"] == "ready"
+    assert replaced["title"] == "Second lesson"
+    assert "beta" in replaced["script"][0]["text"]
+    assert "alpha" not in replaced["script"][0]["text"]
+    assert _episode_count() == 1
+
+    owner = client.get(
+        f"/api/v1/study-topics/{created['id']}/episode",
+        headers=auth_token,
+    )
+    assert owner.status_code == 200
+    assert owner.json()["title"] == "Second lesson"
+
+    other = _login("other-episode@example.com")
+    hidden = client.get(
+        f"/api/v1/study-topics/{created['id']}/episode",
+        headers=other,
+    )
+    assert hidden.status_code == 404
+    hidden_post = client.post(
+        f"/api/v1/study-topics/{created['id']}/episode",
+        headers=other,
+    )
+    assert hidden_post.status_code == 404
+    assert _episode_count() == 1
+
+
+def test_episode_requires_source_text(auth_token):
+    topic_id = _save_topic_without_source()
+    response = client.post(
+        f"/api/v1/study-topics/{topic_id}/episode",
+        headers=auth_token,
+    )
+    assert response.status_code == 400
+    assert "source text" in response.json()["detail"]
+    assert _episode_count() == 0
+
+
+@patch("ai_utils._chat_completion", return_value="this is not json")
+def test_invalid_episode_script_is_stored_as_failed(_mock_completion, auth_token):
+    created = client.post(
+        "/api/v1/study-topics",
+        headers=auth_token,
+        data={"content": "Cells divide by mitosis.", "topic": "Biology"},
+    ).json()
+    response = client.post(
+        f"/api/v1/study-topics/{created['id']}/episode",
+        headers=auth_token,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "failed"
+    assert "JSON" in body["error_message"]
+    assert body["script"] is None
+    assert body["title"] is None
+
+    stored = client.get(
+        f"/api/v1/study-topics/{created['id']}/episode",
+        headers=auth_token,
+    )
+    assert stored.status_code == 200
+    assert stored.json()["status"] == "failed"
+    assert stored.json()["script"] is None

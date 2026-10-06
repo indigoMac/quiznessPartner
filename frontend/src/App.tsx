@@ -10,6 +10,7 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import HomePage from "./pages/HomePage";
 import Dashboard from "./pages/Dashboard";
+import StudyPage from "./pages/StudyPage";
 import Profile from "./pages/Profile";
 import QuizPage from "./pages/QuizPage";
 import CreateQuiz from "./components/CreateQuiz";
@@ -58,6 +59,7 @@ function App() {
                 }
               >
                 <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/study/:id" element={<StudyPage />} />
                 <Route path="/quiz/new" element={<CreateQuiz />} />
                 <Route path="/profile" element={<Profile />} />
               </Route>

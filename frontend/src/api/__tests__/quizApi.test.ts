@@ -61,6 +61,9 @@ import {
   practiceStudyTopic,
   saveStudyMaterial,
   explainQuestion,
+  getStudyTopic,
+  getStudyEpisode,
+  generateStudyEpisode,
 } from "../quizApi";
 import API_BASE_URL from "../config";
 
@@ -158,6 +161,25 @@ describe("Quiz API", () => {
     expect(payload).toBeInstanceOf(FormData);
     expect(payload.get("content")).toBe("Notes about cells");
     expect(payload.get("topic")).toBe("Biology");
+  });
+
+  it("loads and generates an episode", async () => {
+    await getStudyTopic(4);
+    await getStudyEpisode(4);
+    await generateStudyEpisode(4);
+
+    const mockAxios = (await import("axios")).default;
+    const instance = mockAxios.create();
+    const getCall = instance.get as unknown as jest.Mock;
+    const postCall = instance.post as unknown as jest.Mock;
+    expect(getCall.mock.calls.map((call) => call[0])).toEqual([
+      "/api/v1/study-topics/4",
+      "/api/v1/study-topics/4/episode",
+    ]);
+    const episodePost = postCall.mock.calls.find(
+      (call) => call[0] === "/api/v1/study-topics/4/episode"
+    );
+    expect(episodePost).toBeTruthy();
   });
 
   it("practices a study topic", async () => {

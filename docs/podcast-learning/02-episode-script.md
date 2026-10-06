@@ -21,19 +21,19 @@ Store the script as JSON. On SQLite use the same JSON column approach as other n
 
 ## Work
 
-- [ ] Add `POST /api/v1/study-topics/{id}/episode`. It loads the caller's topic, rejects a missing or empty `source_text` with 400, and creates or replaces the single episode.
-- [ ] Build the prompt in a new function next to the other generators in `backend/ai_utils.py`. Ask for JSON only: title plus segments. Ground it in the stored source. For long sources, select a spread of chunks with the existing `split_text` helper rather than pasting the whole document.
-- [ ] Validate the model output before saving: at least one chapter, both speakers present, no empty lines, and a segment count that lands near 8–12 minutes of speech (about 1,200–1,800 words). If validation fails, set `status` to `failed` and return the error. Do not save a partial script as ready.
-- [ ] Add `GET /api/v1/study-topics/{id}/episode` for the owner. Other users get 404.
-- [ ] Add a study page at `/study/:id` that shows the source title and, once ready, the script grouped by chapter. Host lines are visually distinct. A failed episode shows `error_message` and a retry button that calls the same POST.
-- [ ] Link each saved topic on the dashboard to `/study/:id`.
+- [x] Add `POST /api/v1/study-topics/{id}/episode`. It loads the caller's topic, rejects a missing or empty `source_text` with 400, and creates or replaces the single episode.
+- [x] Build the prompt in a new function next to the other generators in `backend/ai_utils.py`. Ask for JSON only: title plus segments. Ground it in the stored source. For long sources, select a spread of chunks with the existing `split_text` helper rather than pasting the whole document.
+- [x] Validate the model output before saving: at least one chapter, both speakers present, no empty lines, and a segment count that lands near 8–12 minutes of speech (about 1,200–1,800 words). If validation fails, set `status` to `failed` and return the error. Do not save a partial script as ready.
+- [x] Add `GET /api/v1/study-topics/{id}/episode` for the owner. Other users get 404.
+- [x] Add a study page at `/study/:id` that shows the source title and, once ready, the script grouped by chapter. Host lines are visually distinct. A failed episode shows `error_message` and a retry button that calls the same POST.
+- [x] Link each saved topic on the dashboard to `/study/:id`.
 
 ## Tests
 
-- [ ] Unit test the parser against a valid script, missing speakers, empty text, and non-JSON.
-- [ ] API test with the LLM mocked: ready episode persists and a second POST replaces it.
-- [ ] API test: topic with no source text returns 400.
-- [ ] Frontend test: chapters render host lines in order, and the failed state shows the error.
+- [x] Unit test the parser against a valid script, missing speakers, empty text, and non-JSON.
+- [x] API test with the LLM mocked: ready episode persists and a second POST replaces it.
+- [x] API test: topic with no source text returns 400.
+- [x] Frontend test: chapters render host lines in order, and the failed state shows the error.
 
 ## Done when
 

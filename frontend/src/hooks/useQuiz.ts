@@ -10,6 +10,9 @@ import {
   listMyQuizzes,
   practiceStudyTopic,
   saveStudyMaterial,
+  getStudyTopic,
+  loadOrCreateEpisode,
+  generateStudyEpisode,
 } from "../api/quizApi";
 import type {
   GenerateQuizForm,
@@ -95,6 +98,37 @@ export const usePracticeStudyTopic = () => {
     mutationFn: (data: PracticeStudyTopicForm) => practiceStudyTopic(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["my-quizzes"] });
+    },
+  });
+};
+
+export const useStudyTopic = (studyTopicId: number | null) => {
+  return useQuery({
+    queryKey: ["study-topic", studyTopicId],
+    queryFn: () => getStudyTopic(studyTopicId!),
+    enabled: !!studyTopicId,
+    retry: false,
+  });
+};
+
+export const useStudyEpisode = (studyTopicId: number | null) => {
+  return useQuery({
+    queryKey: ["study-episode", studyTopicId],
+    queryFn: () => loadOrCreateEpisode(studyTopicId!),
+    enabled: !!studyTopicId,
+    retry: false,
+  });
+};
+
+export const useGenerateStudyEpisode = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (studyTopicId: number) => generateStudyEpisode(studyTopicId),
+    onSuccess: (episode) => {
+      queryClient.setQueryData(
+        ["study-episode", episode.study_topic_id],
+        episode
+      );
     },
   });
 };

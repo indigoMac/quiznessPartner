@@ -13,6 +13,7 @@ import type {
   ExplainQuestionResponse,
   SaveStudyMaterialForm,
   StudyTopicDetail,
+  Episode,
 } from "../types/api";
 
 const api = axios.create({
@@ -168,6 +169,72 @@ export const saveStudyMaterial = async (
     }
   );
   return response.data;
+};
+
+function errorDetail(error: unknown): string | null {
+  if (axios.isAxiosError(error)) {
+    const detail = error.response?.data?.detail;
+    if (typeof detail === "string") return detail;
+  }
+  return null;
+}
+
+function isMissingEpisode(error: unknown): boolean {
+  return axios.isAxiosError(error) && error.response?.status === 404;
+}
+
+export const getStudyTopic = async (
+  studyTopicId: number
+): Promise<StudyTopicDetail> => {
+  try {
+    const response = await api.get<StudyTopicDetail>(
+      `/api/v1/study-topics/${studyTopicId}`
+    );
+    return response.data;
+  } catch (error) {
+    const detail = errorDetail(error);
+    if (detail) throw new Error(detail);
+    throw error;
+  }
+};
+
+export const getStudyEpisode = async (
+  studyTopicId: number
+): Promise<Episode> => {
+  const response = await api.get<Episode>(
+    `/api/v1/study-topics/${studyTopicId}/episode`
+  );
+  return response.data;
+};
+
+export const generateStudyEpisode = async (
+  studyTopicId: number
+): Promise<Episode> => {
+  try {
+    const response = await api.post<Episode>(
+      `/api/v1/study-topics/${studyTopicId}/episode`
+    );
+    return response.data;
+  } catch (error) {
+    const detail = errorDetail(error);
+    if (detail) throw new Error(detail);
+    throw error;
+  }
+};
+
+export const loadOrCreateEpisode = async (
+  studyTopicId: number
+): Promise<Episode> => {
+  try {
+    return await getStudyEpisode(studyTopicId);
+  } catch (error) {
+    if (isMissingEpisode(error)) {
+      return generateStudyEpisode(studyTopicId);
+    }
+    const detail = errorDetail(error);
+    if (detail) throw new Error(detail);
+    throw error;
+  }
 };
 
 export const practiceStudyTopic = async (

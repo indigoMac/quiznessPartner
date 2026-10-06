@@ -49,6 +49,10 @@ describe("Dashboard with saved material", () => {
     );
 
     expect(screen.getByText("notes.txt")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "notes.txt" })).toHaveAttribute(
+      "href",
+      "/study/4"
+    );
     expect(screen.getByText("Saved text")).toBeInTheDocument();
     expect(screen.getByText("No quizzes yet.")).toBeInTheDocument();
     expect(screen.queryByText("No quizzes created yet.")).not.toBeInTheDocument();

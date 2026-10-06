@@ -4,6 +4,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from db import get_session_local
+from models.episode import EPISODE_FAILED, EPISODE_READY, Episode
 from models.question import Question
 from models.quiz import DEFAULT_QUIZ_DIFFICULTY, Quiz
 from models.result import Result
@@ -78,6 +79,60 @@ def get_study_topic_for_user(
         .filter(StudyTopic.id == study_topic_id, StudyTopic.user_id == user_id)
         .first()
     )
+
+
+def get_episode_for_study_topic(
+    db: Session, study_topic_id: int, user_id: int
+) -> Optional[Episode]:
+    """Return the episode for a study topic when the caller owns it."""
+    return (
+        db.query(Episode)
+        .filter(
+            Episode.study_topic_id == study_topic_id,
+            Episode.user_id == user_id,
+        )
+        .first()
+    )
+
+
+def save_episode(
+    db: Session,
+    study_topic: StudyTopic,
+    status: str,
+    title: Optional[str] = None,
+    script: Optional[list] = None,
+    error_message: Optional[str] = None,
+) -> Episode:
+    """Create or replace the single episode for a study topic.
+
+    A script is stored only when status is ready. A failure stores the
+    error and clears any previous script.
+    """
+    episode = db.query(Episode).filter(Episode.study_topic_id == study_topic.id).first()
+    if episode is None:
+        episode = Episode(
+            study_topic_id=study_topic.id,
+            user_id=study_topic.user_id,
+        )
+        db.add(episode)
+
+    episode.user_id = study_topic.user_id
+    episode.status = status
+    if status == EPISODE_READY:
+        episode.title = title
+        episode.script = script
+        episode.error_message = None
+    elif status == EPISODE_FAILED:
+        episode.title = None
+        episode.script = None
+        episode.error_message = error_message
+    else:
+        episode.title = None
+        episode.script = None
+        episode.error_message = None
+    db.commit()
+    db.refresh(episode)
+    return episode
 
 
 def get_quiz_question(

@@ -1,5 +1,6 @@
 from db import get_engine
 from models.base import Base
+from models.episode import Episode  # noqa: F401
 from models.question import Question  # noqa: F401
 from models.quiz import Quiz  # noqa: F401
 from models.result import Result  # noqa: F401

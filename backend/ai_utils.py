@@ -68,6 +68,43 @@ class ExplanationError(Exception):
     """Raised when a question explanation fails and the caller should surface it."""
 
 
+class EpisodeGenerationError(Exception):
+    """Raised when an episode script cannot be parsed or generated."""
+
+
+# Spoken lesson length. About 150 words a minute: 8 minutes is 1,200 words
+# and 12 minutes is 1,800. Outside this range the script is rejected.
+MIN_EPISODE_WORDS = 1200
+MAX_EPISODE_WORDS = 1800
+EPISODE_SPEAKERS = ("host_a", "host_b")
+
+EPISODE_SYSTEM_PROMPT = (
+    "You write a short two-host study lesson as JSON. "
+    "Only return valid JSON. Use the source material and do not invent facts."
+)
+
+EPISODE_SEGMENT_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "chapter": {"type": "string"},
+        "speaker": {"type": "string", "enum": ["host_a", "host_b"]},
+        "text": {"type": "string"},
+    },
+    "required": ["chapter", "speaker", "text"],
+    "additionalProperties": False,
+}
+
+EPISODE_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string"},
+        "segments": {"type": "array", "items": EPISODE_SEGMENT_SCHEMA},
+    },
+    "required": ["title", "segments"],
+    "additionalProperties": False,
+}
+
+
 QUIZ_SYSTEM_PROMPT = (
     "You are a helpful assistant that generates quiz questions "
     "in JSON format. Only return valid JSON."
@@ -616,14 +653,21 @@ def _models_to_try() -> List[str]:
     return models
 
 
-def _response_format(model: str) -> Optional[Dict[str, Any]]:
-    """Constrain decoding to QUIZ_SCHEMA on models that support it."""
+def _schema_response_format(
+    model: str, name: str, schema: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
+    """Constrain decoding on models that support a JSON schema."""
     if model not in STRICT_SCHEMA_MODELS:
         return None
     return {
         "type": "json_schema",
-        "json_schema": {"name": "quiz", "strict": True, "schema": QUIZ_SCHEMA},
+        "json_schema": {"name": name, "strict": True, "schema": schema},
     }
+
+
+def _response_format(model: str) -> Optional[Dict[str, Any]]:
+    """Constrain decoding to QUIZ_SCHEMA on models that support it."""
+    return _schema_response_format(model, "quiz", QUIZ_SCHEMA)
 
 
 def _chat_completion(
@@ -631,7 +675,11 @@ def _chat_completion(
     *,
     system_prompt: Optional[str] = None,
     constrain_to_quiz_schema: bool = True,
+    response_schema: Optional[Dict[str, Any]] = None,
+    schema_name: str = "response",
     temperature: float = 0.7,
+    max_tokens: Optional[int] = None,
+    reasoning_effort: Optional[str] = None,
     empty_error: str = "Quiz generation returned an empty response. Please try again.",
     failure_error: str = "Quiz generation failed. Please try again.",
     error_cls: type[Exception] = QuizGenerationError,
@@ -648,10 +696,22 @@ def _chat_completion(
     last_error: Optional[Exception] = None
     for model in _models_to_try():
         extra: Dict[str, Any] = {}
+        if max_tokens is not None:
+            extra["max_tokens"] = max_tokens
+        if reasoning_effort and "gpt-oss" in model:
+            # These models spend the token budget on reasoning and then return
+            # an empty answer. Low effort leaves room for the script itself.
+            extra["extra_body"] = {"reasoning_effort": reasoning_effort}
         if constrain_to_quiz_schema:
             response_format = _response_format(model)
-            if response_format:
-                extra["response_format"] = response_format
+        elif response_schema is not None:
+            response_format = _schema_response_format(
+                model, schema_name, response_schema
+            )
+        else:
+            response_format = None
+        if response_format:
+            extra["response_format"] = response_format
         try:
             response = client.chat.completions.create(
                 model=model,
@@ -944,8 +1004,217 @@ def _generate_quiz(
     )
 
 
+@dataclass
+class EpisodeScript:
+    """A validated lesson ready to store."""
+
+    title: str
+    segments: List[Dict[str, str]] = field(default_factory=list)
+
+
 def source_text_for_storage(text: str) -> Optional[str]:
     """Keep the same representative chunks used for generation."""
     chunks = select_source_chunks(text)
     stored = "\n\n".join(chunks).strip()
     return stored or None
+
+
+def _episode_word_count(segments: List[Dict[str, str]]) -> int:
+    return sum(len(segment["text"].split()) for segment in segments)
+
+
+def _has_blank_line(text: str) -> bool:
+    return any(not line.strip() for line in text.splitlines())
+
+
+def _build_episode_prompt(text: str, topic: Optional[str]) -> str:
+    topic_line = f"Topic: {topic}\n" if topic else ""
+    length_line = (
+        f"The spoken text, across every segment, must be between "
+        f"{MIN_EPISODE_WORDS} and {MAX_EPISODE_WORDS} words "
+        "(about 8 to 12 minutes)."
+    )
+    return f"""
+Write a two-speaker lesson grounded only in the source material below.
+The speakers are host_a and host_b. Both must speak, more than once.
+Group the spoken lines into named chapters.
+Write 12 segments. Each spoken turn should be about 120 words.
+{length_line}
+Do not leave a line blank. Do not add facts that are not in the source.
+
+{topic_line}Source:
+{text}
+
+Return JSON only, with this shape:
+{{
+  "title": "short episode title",
+  "segments": [
+    {{"chapter": "chapter name", "speaker": "host_a", "text": "one spoken line"}}
+  ]
+}}
+""".strip()
+
+
+def parse_episode_script(result: str) -> EpisodeScript:
+    """Turn model output into a script, or raise EpisodeGenerationError.
+
+    A script is ready only when it has a title, at least one chapter, both
+    speakers, no empty lines, and a spoken length of 1,200–1,800 words.
+    """
+    try:
+        payload = json.loads(_strip_json_fences((result or "").strip()))
+    except json.JSONDecodeError as exc:
+        logger.error("Episode script was not valid JSON: %s", result)
+        raise EpisodeGenerationError("Episode script was not valid JSON.") from exc
+
+    if not isinstance(payload, dict):
+        raise EpisodeGenerationError("Episode script was not valid JSON.")
+
+    title = payload.get("title")
+    if not isinstance(title, str) or not title.strip():
+        raise EpisodeGenerationError("Episode script is missing a title.")
+
+    raw_segments = payload.get("segments")
+    if not isinstance(raw_segments, list) or not raw_segments:
+        raise EpisodeGenerationError(
+            "Episode script must include at least one chapter."
+        )
+
+    segments: List[Dict[str, str]] = []
+    speakers = set()
+    for raw in raw_segments:
+        if not isinstance(raw, dict):
+            raise EpisodeGenerationError("Episode script has an empty line.")
+        chapter = raw.get("chapter")
+        speaker = raw.get("speaker")
+        text = raw.get("text")
+        if not isinstance(chapter, str) or not chapter.strip():
+            raise EpisodeGenerationError(
+                "Episode script must include at least one chapter."
+            )
+        if speaker not in EPISODE_SPEAKERS:
+            raise EpisodeGenerationError(
+                "Episode script speakers must be host_a or host_b."
+            )
+        if not isinstance(text, str) or not text.strip() or _has_blank_line(text):
+            raise EpisodeGenerationError("Episode script has an empty line.")
+        speakers.add(speaker)
+        segments.append(
+            {
+                "chapter": " ".join(chapter.split()),
+                "speaker": speaker,
+                "text": text.strip(),
+            }
+        )
+
+    if "host_a" not in speakers or "host_b" not in speakers:
+        raise EpisodeGenerationError("Episode script must include both speakers.")
+
+    word_count = _episode_word_count(segments)
+    if word_count < MIN_EPISODE_WORDS or word_count > MAX_EPISODE_WORDS:
+        raise EpisodeGenerationError(
+            "Episode script must be between 1200 and 1800 words."
+        )
+
+    return EpisodeScript(title=" ".join(title.split()), segments=segments)
+
+
+def _episode_completion(prompt: str) -> str:
+    try:
+        return _chat_completion(
+            prompt,
+            system_prompt=EPISODE_SYSTEM_PROMPT,
+            constrain_to_quiz_schema=False,
+            response_schema=EPISODE_SCHEMA,
+            schema_name="episode",
+            temperature=0.4,
+            max_tokens=8000,
+            reasoning_effort="low",
+            empty_error="Episode script came back empty. Please try again.",
+            failure_error="Could not write the episode script. Please try again.",
+            error_cls=EpisodeGenerationError,
+        )
+    except EpisodeGenerationError:
+        raise
+    except Exception as exc:
+        logger.exception("Episode script generation failed")
+        raise EpisodeGenerationError(
+            "Could not write the episode script. Please try again."
+        ) from exc
+
+
+def _draft_word_count(draft: str) -> Optional[int]:
+    """Count spoken words in model JSON, even when the script is too short."""
+    try:
+        payload = json.loads(_strip_json_fences(draft.strip()))
+    except json.JSONDecodeError:
+        return None
+    segments = payload.get("segments") if isinstance(payload, dict) else None
+    if not isinstance(segments, list):
+        return None
+    total = 0
+    for segment in segments:
+        if not isinstance(segment, dict):
+            continue
+        text = segment.get("text")
+        if isinstance(text, str):
+            total += len(text.split())
+    return total
+
+
+def _expand_episode_prompt(
+    draft: str, source: str, topic: Optional[str], words: int
+) -> str:
+    topic_line = f"Topic: {topic}\n" if topic else ""
+    target = 1500
+    return f"""
+The lesson below is {words} spoken words.
+Rewrite it as JSON grounded only in the source.
+Keep both speakers, host_a and host_b, and keep every chapter.
+Lengthen the existing turns until the spoken text is about {target} words.
+It must be at least {MIN_EPISODE_WORDS} words and at most {MAX_EPISODE_WORDS}.
+No empty lines. Do not add facts that are not in the source.
+
+{topic_line}Source:
+{source}
+
+Current lesson:
+{draft}
+""".strip()
+
+
+def generate_episode_script(
+    source_text: str, topic: Optional[str] = None
+) -> EpisodeScript:
+    """Write one two-speaker lesson from stored source material.
+
+    Long sources contribute a spread of chunks from split_text, not the
+    whole document. A draft that is under 1,200 words is rewritten up to
+    twice, with the current word count in the prompt, so the spoken length
+    can land between 1,200 and 1,800 words. A draft that is too long is not
+    rewritten.
+    """
+    if not source_text or not source_text.strip():
+        raise EpisodeGenerationError(
+            "This study topic does not have source text to turn into an episode."
+        )
+    chunks = select_source_chunks(source_text)
+    if not chunks:
+        raise EpisodeGenerationError(
+            "This study topic does not have source text to turn into an episode."
+        )
+    source = "\n\n".join(chunks)
+    result = _episode_completion(_build_episode_prompt(source, topic))
+    for _ in range(2):
+        try:
+            return parse_episode_script(result)
+        except EpisodeGenerationError as exc:
+            if "between 1200 and 1800" not in str(exc):
+                raise
+            words = _draft_word_count(result)
+            if words is None or words >= MIN_EPISODE_WORDS:
+                raise
+            result = _episode_completion(
+                _expand_episode_prompt(result, source, topic, words)
+            )
+    return parse_episode_script(result)

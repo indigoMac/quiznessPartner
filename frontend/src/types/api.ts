@@ -126,3 +126,21 @@ export interface ExplainQuestionRequest {
 export interface ExplainQuestionResponse {
   explanation: string;
 }
+
+export type EpisodeStatus = "pending" | "ready" | "failed";
+export type EpisodeSpeaker = "host_a" | "host_b";
+
+export interface EpisodeSegment {
+  chapter: string;
+  speaker: EpisodeSpeaker;
+  text: string;
+}
+
+export interface Episode {
+  id: number;
+  study_topic_id: number;
+  status: EpisodeStatus;
+  title?: string | null;
+  script?: EpisodeSegment[] | null;
+  error_message?: string | null;
+}

@@ -10,11 +10,13 @@ from sqlalchemy.orm import Session
 
 from ai_utils import (
     DEFAULT_QUIZ_DIFFICULTY,
+    EpisodeGenerationError,
     ExplanationError,
     QuizDifficulty,
     QuizGenerationError,
     as_generated_quiz,
     extract_text_from_pdf,
+    generate_episode_script,
     generate_quiz_from_text,
     source_text_for_storage,
 )
@@ -25,14 +27,17 @@ from db_utils import (
     create_quiz,
     create_study_topic,
     get_db,
+    get_episode_for_study_topic,
     get_quiz_with_questions,
     get_study_topic_for_user,
     list_study_topic_questions,
     list_user_quizzes,
     list_user_study_topics,
     record_quiz_result,
+    save_episode,
 )
 from env_loader import load_app_env
+from models.episode import EPISODE_FAILED, EPISODE_PENDING, EPISODE_READY
 from models.user import User
 from services.explanation_service import (
     InvalidSelectionError,
@@ -173,6 +178,21 @@ class StudyTopicResponse(BaseModel):
     can_practice: bool
 
 
+class EpisodeSegmentResponse(BaseModel):
+    chapter: str
+    speaker: str
+    text: str
+
+
+class EpisodeResponse(BaseModel):
+    id: int
+    study_topic_id: int
+    status: str
+    title: Optional[str] = None
+    script: Optional[List[EpisodeSegmentResponse]] = None
+    error_message: Optional[str] = None
+
+
 class QuizListResponse(BaseModel):
     quizzes: List[QuizSummary]
     study_topics: List[StudyTopicSummary]
@@ -209,6 +229,28 @@ def _study_topic_response(study_topic) -> "StudyTopicResponse":
         source_url=study_topic.source_url,
         can_practice=_can_practice_topic(study_topic),
     )
+
+
+def _episode_response(episode) -> "EpisodeResponse":
+    """Return a script only when the episode is ready."""
+    script = episode.script if episode.status == EPISODE_READY else None
+    return EpisodeResponse(
+        id=episode.id,
+        study_topic_id=episode.study_topic_id,
+        status=episode.status,
+        title=episode.title if episode.status == EPISODE_READY else None,
+        script=script,
+        error_message=(
+            episode.error_message if episode.status == EPISODE_FAILED else None
+        ),
+    )
+
+
+def _require_owned_topic(db: Session, study_topic_id: int, user_id: int):
+    study_topic = get_study_topic_for_user(db, study_topic_id, user_id)
+    if not study_topic:
+        raise HTTPException(status_code=404, detail="Study topic not found")
+    return study_topic
 
 
 async def _text_from_upload(file: UploadFile) -> str:
@@ -474,10 +516,96 @@ async def get_study_material(
     current_user: User = Depends(get_current_active_user),
 ):
     """Return one study topic owned by the current user."""
-    study_topic = get_study_topic_for_user(db, study_topic_id, current_user.id)
-    if not study_topic:
-        raise HTTPException(status_code=404, detail="Study topic not found")
+    study_topic = _require_owned_topic(db, study_topic_id, current_user.id)
     return _study_topic_response(study_topic)
+
+
+@app.post(
+    "/api/v1/study-topics/{study_topic_id}/episode",
+    response_model=EpisodeResponse,
+)
+async def create_study_episode(
+    study_topic_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Generate or replace the single episode script for a study topic.
+
+    A model response that fails validation is stored as failed and returned
+    with error_message. It is not stored as a ready script.
+    """
+    study_topic = _require_owned_topic(db, study_topic_id, current_user.id)
+    source_text = (study_topic.source_text or "").strip()
+    if not source_text:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This study topic does not have source text " "to turn into an episode."
+            ),
+        )
+
+    save_episode(db, study_topic, EPISODE_PENDING)
+    try:
+        generated = generate_episode_script(
+            source_text,
+            study_topic.topic or study_topic.title,
+        )
+    except EpisodeGenerationError as exc:
+        logger.warning(
+            "Episode script for study topic %s failed: %s",
+            study_topic.id,
+            exc,
+        )
+        episode = save_episode(
+            db,
+            study_topic,
+            EPISODE_FAILED,
+            error_message=str(exc),
+        )
+        return _episode_response(episode)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception(
+            "Episode script generation failed for study topic %s",
+            study_topic.id,
+        )
+        save_episode(
+            db,
+            study_topic,
+            EPISODE_FAILED,
+            error_message="Could not write the episode script. Please try again.",
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Could not write the episode script. Please try again.",
+        ) from exc
+
+    episode = save_episode(
+        db,
+        study_topic,
+        EPISODE_READY,
+        title=generated.title,
+        script=generated.segments,
+    )
+    return _episode_response(episode)
+
+
+@app.get(
+    "/api/v1/study-topics/{study_topic_id}/episode",
+    response_model=EpisodeResponse,
+)
+async def get_study_episode(
+    study_topic_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Return the caller's episode. Anyone else, and a missing episode, is 404."""
+    study_topic = _require_owned_topic(db, study_topic_id, current_user.id)
+    episode = get_episode_for_study_topic(db, study_topic.id, current_user.id)
+    if not episode:
+        raise HTTPException(status_code=404, detail="Episode not found")
+    return _episode_response(episode)
 
 
 @app.post("/api/v1/generate-quiz-from-url", response_model=QuizResponse)
