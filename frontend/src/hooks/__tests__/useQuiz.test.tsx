@@ -25,6 +25,7 @@ vi.mock("../../api/quizApi", () => ({
   getStudyTopic: vi.fn(),
   loadOrCreateEpisode: vi.fn(),
   generateStudyEpisode: vi.fn(),
+  generateStudyAudio: vi.fn(),
 }));
 
 import { useMyQuizzes } from "../useQuiz";

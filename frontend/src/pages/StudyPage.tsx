@@ -1,6 +1,7 @@
 import { Link, useParams } from "react-router-dom";
 import Button from "../components/Button";
 import {
+  useGenerateStudyAudio,
   useGenerateStudyEpisode,
   useStudyEpisode,
   useStudyTopic,
@@ -37,6 +38,19 @@ function hostLineClass(speaker: EpisodeSegment["speaker"]) {
   return "rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900 dark:bg-amber-950/40";
 }
 
+function audioFailureMessage(episode: Episode | undefined, audioError: unknown) {
+  if (audioError instanceof Error && audioError.message) {
+    return audioError.message;
+  }
+  if (episode?.audio_status === "failed") {
+    return (
+      episode.audio_error ||
+      "Could not generate the episode audio. Please try again."
+    );
+  }
+  return "Could not generate the episode audio. Please try again.";
+}
+
 function failureMessage(
   episode: Episode | undefined,
   generateError: unknown,
@@ -63,9 +77,10 @@ export default function StudyPage() {
   const topicQuery = useStudyTopic(topicId);
   const episodeQuery = useStudyEpisode(topicQuery.isSuccess ? topicId : null);
   const generate = useGenerateStudyEpisode();
+  const generateAudio = useGenerateStudyAudio();
 
   const topic = topicQuery.data;
-  const episode = generate.data ?? episodeQuery.data;
+  const episode = episodeQuery.data ?? generate.data ?? generateAudio.data;
   const script =
     episode?.status === "ready" && episode.script ? episode.script : null;
   const writing =
@@ -81,6 +96,13 @@ export default function StudyPage() {
   const retry = () => {
     if (topicId) generate.mutate(topicId);
   };
+  const startAudio = () => {
+    if (topicId) generateAudio.mutate(topicId);
+  };
+  const audioStatus = episode?.audio_status ?? "none";
+  const audioGenerating = audioStatus === "generating" || generateAudio.isPending;
+  const audioFailed =
+    !audioGenerating && (audioStatus === "failed" || generateAudio.isError);
 
   if (!topicId || (topicQuery.isError && !topic)) {
     const message =
@@ -115,6 +137,36 @@ export default function StudyPage() {
         {topic?.source_url && (
           <p className="mt-2 text-sm text-stone-500 dark:text-stone-400 break-all">
             {topic.source_url}
+          </p>
+        )}
+        {script && audioGenerating && (
+          <div className="mt-4 flex items-center gap-3" data-testid="audio-progress">
+            <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-teal-700" />
+            <p className="text-stone-600 dark:text-stone-300">Generating audio...</p>
+          </div>
+        )}
+        {script && audioFailed && (
+          <div className="mt-4" role="alert">
+            <p className="text-red-700 dark:text-red-400 break-words">
+              {audioFailureMessage(episode, generateAudio.error)}
+            </p>
+            <Button
+              className="mt-4"
+              onClick={startAudio}
+              isLoading={generateAudio.isPending}
+            >
+              Generate audio
+            </Button>
+          </div>
+        )}
+        {script && !audioGenerating && !audioFailed && audioStatus === "none" && (
+          <Button className="mt-4" onClick={startAudio}>
+            Generate audio
+          </Button>
+        )}
+        {script && audioStatus === "ready" && (
+          <p className="mt-4 text-stone-600 dark:text-stone-300" data-testid="audio-ready">
+            Audio is ready.
           </p>
         )}
       </div>

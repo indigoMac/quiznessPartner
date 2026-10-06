@@ -64,6 +64,7 @@ import {
   getStudyTopic,
   getStudyEpisode,
   generateStudyEpisode,
+  generateStudyAudio,
 } from "../quizApi";
 import API_BASE_URL from "../config";
 
@@ -180,6 +181,18 @@ describe("Quiz API", () => {
       (call) => call[0] === "/api/v1/study-topics/4/episode"
     );
     expect(episodePost).toBeTruthy();
+  });
+
+  it("starts episode audio", async () => {
+    await generateStudyAudio(4);
+
+    const mockAxios = (await import("axios")).default;
+    const instance = mockAxios.create();
+    const postCall = instance.post as unknown as jest.Mock;
+    const audioPost = postCall.mock.calls.find(
+      (call) => call[0] === "/api/v1/study-topics/4/episode/audio"
+    );
+    expect(audioPost).toBeTruthy();
   });
 
   it("practices a study topic", async () => {

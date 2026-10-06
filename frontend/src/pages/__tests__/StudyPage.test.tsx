@@ -20,11 +20,17 @@ const hooks = vi.hoisted(() => ({
     error: null as Error | null,
   },
   mutate: vi.fn(),
+  generateAudio: vi.fn(),
   generate: {
     isPending: false,
     isError: false,
     error: null as Error | null,
     data: undefined as Episode | undefined,
+  },
+  audio: {
+    isPending: false,
+    isError: false,
+    error: null as Error | null,
   },
 }));
 
@@ -37,6 +43,12 @@ vi.mock("../../hooks/useQuiz", () => ({
     isError: hooks.generate.isError,
     error: hooks.generate.error,
     data: hooks.generate.data,
+  }),
+  useGenerateStudyAudio: () => ({
+    mutate: hooks.generateAudio,
+    isPending: hooks.audio.isPending,
+    isError: hooks.audio.isError,
+    error: hooks.audio.error,
   }),
 }));
 
@@ -61,6 +73,7 @@ function renderStudyPage() {
 describe("StudyPage", () => {
   beforeEach(() => {
     hooks.mutate.mockReset();
+    hooks.generateAudio.mockReset();
     hooks.topic = {
       data: topic,
       isLoading: false,
@@ -79,6 +92,11 @@ describe("StudyPage", () => {
       isError: false,
       error: null,
       data: undefined,
+    };
+    hooks.audio = {
+      isPending: false,
+      isError: false,
+      error: null,
     };
   });
 
@@ -130,6 +148,71 @@ describe("StudyPage", () => {
     expect(lines[2]).toHaveTextContent("Next line");
     expect(lines[0].className).not.toEqual(lines[1].className);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Generate audio" })
+    ).toBeInTheDocument();
+  });
+
+  it("starts audio generation and shows progress", async () => {
+    hooks.episode.data = {
+      id: 9,
+      study_topic_id: 4,
+      status: "ready",
+      title: "How cells divide",
+      script: [
+        { chapter: "Chapter One", speaker: "host_a", text: "Opening line" },
+      ],
+      audio_status: "generating",
+    };
+
+    renderStudyPage();
+
+    expect(screen.getByTestId("audio-progress")).toHaveTextContent(
+      "Generating audio..."
+    );
+    expect(
+      screen.queryByRole("button", { name: "Generate audio" })
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Opening line")).toBeInTheDocument();
+  });
+
+  it("starts audio from a ready script", async () => {
+    hooks.episode.data = {
+      id: 9,
+      study_topic_id: 4,
+      status: "ready",
+      title: "How cells divide",
+      script: [
+        { chapter: "Chapter One", speaker: "host_a", text: "Opening line" },
+      ],
+      audio_status: "none",
+    };
+
+    renderStudyPage();
+    await userEvent.click(screen.getByRole("button", { name: "Generate audio" }));
+    expect(hooks.generateAudio).toHaveBeenCalledWith(4);
+  });
+
+  it("shows an audio failure without hiding the script", () => {
+    hooks.episode.data = {
+      id: 9,
+      study_topic_id: 4,
+      status: "ready",
+      title: "How cells divide",
+      script: [
+        { chapter: "Chapter One", speaker: "host_a", text: "Opening line" },
+      ],
+      audio_status: "failed",
+      audio_error: "Speech provider rejected the line.",
+    };
+
+    renderStudyPage();
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Speech provider rejected the line."
+    );
+    expect(screen.getByText("Opening line")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Generate audio" })).toBeInTheDocument();
   });
 
   it("shows the error and retries a failed episode", async () => {
@@ -149,6 +232,9 @@ describe("StudyPage", () => {
       "Episode script was not valid JSON."
     );
     expect(screen.queryByTestId("host-line")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Generate audio" })
+    ).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /try again/i }));
     expect(hooks.mutate).toHaveBeenCalledWith(4);

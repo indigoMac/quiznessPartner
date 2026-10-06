@@ -13,6 +13,7 @@ import {
   getStudyTopic,
   loadOrCreateEpisode,
   generateStudyEpisode,
+  generateStudyAudio,
 } from "../api/quizApi";
 import type {
   GenerateQuizForm,
@@ -117,6 +118,8 @@ export const useStudyEpisode = (studyTopicId: number | null) => {
     queryFn: () => loadOrCreateEpisode(studyTopicId!),
     enabled: !!studyTopicId,
     retry: false,
+    refetchInterval: (query) =>
+      query.state.data?.audio_status === "generating" ? 2000 : false,
   });
 };
 
@@ -124,6 +127,19 @@ export const useGenerateStudyEpisode = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (studyTopicId: number) => generateStudyEpisode(studyTopicId),
+    onSuccess: (episode) => {
+      queryClient.setQueryData(
+        ["study-episode", episode.study_topic_id],
+        episode
+      );
+    },
+  });
+};
+
+export const useGenerateStudyAudio = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (studyTopicId: number) => generateStudyAudio(studyTopicId),
     onSuccess: (episode) => {
       queryClient.setQueryData(
         ["study-episode", episode.study_topic_id],

@@ -4,7 +4,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from db import get_session_local
-from models.episode import EPISODE_FAILED, EPISODE_READY, Episode
+from models.episode import AUDIO_NONE, EPISODE_FAILED, EPISODE_READY, Episode
 from models.question import Question
 from models.quiz import DEFAULT_QUIZ_DIFFICULTY, Quiz
 from models.result import Result
@@ -106,18 +106,26 @@ def save_episode(
     """Create or replace the single episode for a study topic.
 
     A script is stored only when status is ready. A failure stores the
-    error and clears any previous script.
+    error and clears any previous script. Replacing the script clears audio,
+    because the old file would no longer match the new lines.
     """
     episode = db.query(Episode).filter(Episode.study_topic_id == study_topic.id).first()
     if episode is None:
         episode = Episode(
             study_topic_id=study_topic.id,
             user_id=study_topic.user_id,
+            audio_status=AUDIO_NONE,
         )
         db.add(episode)
 
     episode.user_id = study_topic.user_id
     episode.status = status
+    # A new script no longer matches any audio already generated for this row.
+    episode.audio_status = AUDIO_NONE
+    episode.audio_error = None
+    episode.duration_seconds = None
+    episode.segment_timings = None
+    episode.audio_key = None
     if status == EPISODE_READY:
         episode.title = title
         episode.script = script

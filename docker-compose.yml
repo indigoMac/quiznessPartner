@@ -32,7 +32,11 @@ services:
       - DEBUG=True
       - BACKEND_CORS_ORIGINS=["http://localhost:3000","http://localhost:8000"]
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GROQ_API_KEY=${GROQ_API_KEY}
       - SECRET_KEY=${SECRET_KEY}
+      - EPISODE_MEDIA_DIR=/var/lib/quizness/episode-media
+    volumes:
+      - episode_media:/var/lib/quizness/episode-media
     networks:
       - app-network
 
@@ -51,6 +55,7 @@ services:
 
 volumes:
   postgres_data:
+  episode_media:
 
 networks:
   app-network:

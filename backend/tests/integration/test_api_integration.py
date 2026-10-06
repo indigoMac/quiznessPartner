@@ -1,5 +1,7 @@
 import io
 import json
+import wave
+from datetime import datetime, timedelta, timezone
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest
@@ -13,12 +15,13 @@ from auth.auth_utils import get_password_hash
 from db_utils import get_db
 from main import app
 from models.base import Base
-from models.episode import Episode
+from models.episode import AUDIO_GENERATING, AUDIO_NONE, Episode
 from models.question import Question
 from models.quiz import Quiz
 from models.result import Result
 from models.study_topic import StudyTopic  # noqa: F401
 from models.user import User
+from services.episode_audio import AudioSynthesisError
 
 # Create a test database in memory
 TEST_SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
@@ -1168,3 +1171,247 @@ def test_invalid_episode_script_is_stored_as_failed(_mock_completion, auth_token
     assert stored.status_code == 200
     assert stored.json()["status"] == "failed"
     assert stored.json()["script"] is None
+
+
+def _silence_wav(seconds: float, rate: int = 8000) -> bytes:
+    frames = int(seconds * rate)
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as audio:
+        audio.setnchannels(1)
+        audio.setsampwidth(2)
+        audio.setframerate(rate)
+        audio.writeframes(b"\x00\x00" * frames)
+    return buffer.getvalue()
+
+
+def _ready_episode() -> int:
+    db = TestingSessionLocal()
+    try:
+        user = db.query(User).filter(User.email == "test@example.com").first()
+        topic = StudyTopic(
+            user_id=user.id,
+            title="Cells",
+            topic="Biology",
+            source_text="Cells divide by mitosis.",
+        )
+        db.add(topic)
+        db.commit()
+        db.refresh(topic)
+        episode = Episode(
+            study_topic_id=topic.id,
+            user_id=user.id,
+            status="ready",
+            title="Mitosis",
+            script=[
+                {"chapter": "Opening", "speaker": "host_a", "text": "Cells divide."},
+                {"chapter": "Opening", "speaker": "host_b", "text": "They split."},
+            ],
+            audio_status=AUDIO_NONE,
+        )
+        db.add(episode)
+        db.commit()
+        return topic.id
+    finally:
+        db.close()
+
+
+def _set_audio_status(topic_id: int, audio_status: str, minutes_ago: int) -> None:
+    db = TestingSessionLocal()
+    try:
+        episode = db.query(Episode).filter(Episode.study_topic_id == topic_id).one()
+        episode.audio_status = audio_status
+        episode.audio_key = "jobs/existing"
+        episode.updated_at = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+        db.commit()
+    finally:
+        db.close()
+
+
+def _use_test_audio_session(monkeypatch, tmp_path):
+    monkeypatch.setenv("EPISODE_MEDIA_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        "services.episode_audio.open_audio_session",
+        lambda: TestingSessionLocal(),
+    )
+
+
+def test_episode_audio_reaches_ready_for_the_owner(auth_token, monkeypatch, tmp_path):
+    topic_id = _ready_episode()
+    _use_test_audio_session(monkeypatch, tmp_path)
+    calls = []
+
+    def fake_speech(text, voice):
+        calls.append((text, voice))
+        return _silence_wav(1.0)
+
+    monkeypatch.setattr("services.episode_audio.synthesize_speech", fake_speech)
+
+    not_ready = client.get(
+        f"/api/v1/study-topics/{topic_id}/episode/audio",
+        headers=auth_token,
+    )
+    assert not_ready.status_code == 409
+
+    started = client.post(
+        f"/api/v1/study-topics/{topic_id}/episode/audio",
+        headers=auth_token,
+    )
+    assert started.status_code == 200
+    assert started.json()["audio_status"] == "generating"
+    assert started.json()["status"] == "ready"
+    assert calls == [
+        ("Cells divide.", "autumn"),
+        ("They split.", "austin"),
+    ]
+
+    finished = client.get(
+        f"/api/v1/study-topics/{topic_id}/episode",
+        headers=auth_token,
+    )
+    body = finished.json()
+    assert body["status"] == "ready"
+    assert body["audio_status"] == "ready"
+    assert body["audio_error"] is None
+    assert body["duration_seconds"] == pytest.approx(2.0)
+    assert body["segment_timings"] == [
+        {"start": 0.0, "end": 1.0},
+        {"start": 1.0, "end": 2.0},
+    ]
+    assert body["script"][0]["text"] == "Cells divide."
+
+    audio = client.get(
+        f"/api/v1/study-topics/{topic_id}/episode/audio",
+        headers=auth_token,
+    )
+    assert audio.status_code == 200
+    assert audio.headers["content-type"].startswith("audio/wav")
+    assert audio.content.startswith(b"RIFF")
+
+    other = _login("other-audio@example.com")
+    hidden = client.get(
+        f"/api/v1/study-topics/{topic_id}/episode/audio",
+        headers=other,
+    )
+    assert hidden.status_code == 404
+    hidden_post = client.post(
+        f"/api/v1/study-topics/{topic_id}/episode/audio",
+        headers=other,
+    )
+    assert hidden_post.status_code == 404
+
+
+def test_episode_audio_post_while_generating_does_not_start_twice(
+    auth_token, monkeypatch
+):
+    topic_id = _ready_episode()
+    calls = []
+    monkeypatch.setattr(
+        "main.synthesize_episode_audio",
+        lambda episode_id: calls.append(episode_id),
+    )
+
+    first = client.post(
+        f"/api/v1/study-topics/{topic_id}/episode/audio",
+        headers=auth_token,
+    )
+    second = client.post(
+        f"/api/v1/study-topics/{topic_id}/episode/audio",
+        headers=auth_token,
+    )
+    assert first.status_code == 200
+    assert first.json()["audio_status"] == "generating"
+    assert second.json()["audio_status"] == "generating"
+    assert len(calls) == 1
+
+
+def test_stale_episode_audio_job_can_be_started_again(auth_token, monkeypatch):
+    topic_id = _ready_episode()
+    _set_audio_status(topic_id, AUDIO_GENERATING, minutes_ago=16)
+    calls = []
+    monkeypatch.setattr(
+        "main.synthesize_episode_audio",
+        lambda episode_id: calls.append(episode_id),
+    )
+
+    response = client.post(
+        f"/api/v1/study-topics/{topic_id}/episode/audio",
+        headers=auth_token,
+    )
+    assert response.status_code == 200
+    assert len(calls) == 1
+
+
+def test_fresh_episode_audio_job_is_not_started_again(auth_token, monkeypatch):
+    topic_id = _ready_episode()
+    _set_audio_status(topic_id, AUDIO_GENERATING, minutes_ago=1)
+    calls = []
+    monkeypatch.setattr(
+        "main.synthesize_episode_audio",
+        lambda episode_id: calls.append(episode_id),
+    )
+
+    response = client.post(
+        f"/api/v1/study-topics/{topic_id}/episode/audio",
+        headers=auth_token,
+    )
+    assert response.status_code == 200
+    assert response.json()["audio_status"] == "generating"
+    assert calls == []
+
+
+def test_episode_audio_failure_keeps_the_script(auth_token, monkeypatch, tmp_path):
+    topic_id = _ready_episode()
+    _use_test_audio_session(monkeypatch, tmp_path)
+
+    def fail_speech(_text, _voice):
+        raise AudioSynthesisError("Speech provider rejected the line.")
+
+    monkeypatch.setattr("services.episode_audio.synthesize_speech", fail_speech)
+    started = client.post(
+        f"/api/v1/study-topics/{topic_id}/episode/audio",
+        headers=auth_token,
+    )
+    assert started.status_code == 200
+    assert started.json()["audio_status"] == "generating"
+
+    finished = client.get(
+        f"/api/v1/study-topics/{topic_id}/episode",
+        headers=auth_token,
+    )
+    body = finished.json()
+    assert body["status"] == "ready"
+    assert body["title"] == "Mitosis"
+    assert body["script"][0]["text"] == "Cells divide."
+    assert body["audio_status"] == "failed"
+    assert body["audio_error"] == "Speech provider rejected the line."
+    assert body["duration_seconds"] is None
+    assert body["segment_timings"] is None
+
+
+def test_episode_audio_requires_a_ready_script(auth_token):
+    missing_topic = _save_topic_without_source()
+    missing = client.post(
+        f"/api/v1/study-topics/{missing_topic}/episode/audio",
+        headers=auth_token,
+    )
+    assert missing.status_code == 404
+
+    topic_id = _ready_episode()
+    db = TestingSessionLocal()
+    try:
+        episode = db.query(Episode).filter(Episode.study_topic_id == topic_id).one()
+        episode.status = "failed"
+        episode.script = None
+        episode.title = None
+        episode.error_message = "Episode script was not valid JSON."
+        episode.audio_status = AUDIO_NONE
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.post(
+        f"/api/v1/study-topics/{topic_id}/episode/audio",
+        headers=auth_token,
+    )
+    assert response.status_code == 400
+    assert "not ready" in response.json()["detail"]

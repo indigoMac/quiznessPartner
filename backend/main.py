@@ -3,8 +3,17 @@ import logging
 import os
 from typing import Any, Dict, List, Optional
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -37,8 +46,25 @@ from db_utils import (
     save_episode,
 )
 from env_loader import load_app_env
-from models.episode import EPISODE_FAILED, EPISODE_PENDING, EPISODE_READY
+from models.episode import (
+    AUDIO_FAILED,
+    AUDIO_NONE,
+    AUDIO_READY,
+    EPISODE_FAILED,
+    EPISODE_PENDING,
+    EPISODE_READY,
+)
 from models.user import User
+from services.episode_audio import (
+    AUDIO_JOB_STARTED,
+    begin_episode_audio,
+    synthesize_episode_audio,
+)
+from services.episode_storage import (
+    AudioStorageError,
+    delete_stored_audio,
+    get_episode_storage,
+)
 from services.explanation_service import (
     InvalidSelectionError,
     QuestionNotFoundError,
@@ -184,6 +210,11 @@ class EpisodeSegmentResponse(BaseModel):
     text: str
 
 
+class SegmentTimingResponse(BaseModel):
+    start: float
+    end: float
+
+
 class EpisodeResponse(BaseModel):
     id: int
     study_topic_id: int
@@ -191,6 +222,10 @@ class EpisodeResponse(BaseModel):
     title: Optional[str] = None
     script: Optional[List[EpisodeSegmentResponse]] = None
     error_message: Optional[str] = None
+    audio_status: str = AUDIO_NONE
+    audio_error: Optional[str] = None
+    duration_seconds: Optional[float] = None
+    segment_timings: Optional[List[SegmentTimingResponse]] = None
 
 
 class QuizListResponse(BaseModel):
@@ -233,16 +268,23 @@ def _study_topic_response(study_topic) -> "StudyTopicResponse":
 
 def _episode_response(episode) -> "EpisodeResponse":
     """Return a script only when the episode is ready."""
-    script = episode.script if episode.status == EPISODE_READY else None
+    script_ready = episode.status == EPISODE_READY
+    audio_ready = episode.audio_status == AUDIO_READY
     return EpisodeResponse(
         id=episode.id,
         study_topic_id=episode.study_topic_id,
         status=episode.status,
-        title=episode.title if episode.status == EPISODE_READY else None,
-        script=script,
+        title=episode.title if script_ready else None,
+        script=episode.script if script_ready else None,
         error_message=(
             episode.error_message if episode.status == EPISODE_FAILED else None
         ),
+        audio_status=episode.audio_status or AUDIO_NONE,
+        audio_error=(
+            episode.audio_error if episode.audio_status == AUDIO_FAILED else None
+        ),
+        duration_seconds=episode.duration_seconds if audio_ready else None,
+        segment_timings=episode.segment_timings if audio_ready else None,
     )
 
 
@@ -544,6 +586,9 @@ async def create_study_episode(
             ),
         )
 
+    existing = get_episode_for_study_topic(db, study_topic.id, current_user.id)
+    if existing is not None:
+        delete_stored_audio(existing.audio_key)
     save_episode(db, study_topic, EPISODE_PENDING)
     try:
         generated = generate_episode_script(
@@ -606,6 +651,63 @@ async def get_study_episode(
     if not episode:
         raise HTTPException(status_code=404, detail="Episode not found")
     return _episode_response(episode)
+
+
+@app.post(
+    "/api/v1/study-topics/{study_topic_id}/episode/audio",
+    response_model=EpisodeResponse,
+)
+async def start_study_episode_audio(
+    study_topic_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Start speech for a ready script and return before the file exists.
+
+    A second request while a job is still inside the timeout returns the
+    same episode and does not start another synthesis.
+    """
+    study_topic = _require_owned_topic(db, study_topic_id, current_user.id)
+    episode = get_episode_for_study_topic(db, study_topic.id, current_user.id)
+    if not episode:
+        raise HTTPException(status_code=404, detail="Episode not found")
+    if episode.status != EPISODE_READY or not episode.script:
+        raise HTTPException(
+            status_code=400,
+            detail="The episode script is not ready for audio.",
+        )
+
+    outcome = begin_episode_audio(db, episode)
+    if outcome == AUDIO_JOB_STARTED:
+        background_tasks.add_task(synthesize_episode_audio, episode.id)
+    return _episode_response(episode)
+
+
+@app.get("/api/v1/study-topics/{study_topic_id}/episode/audio")
+async def get_study_episode_audio(
+    study_topic_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Stream the finished audio file to its owner."""
+    study_topic = _require_owned_topic(db, study_topic_id, current_user.id)
+    episode = get_episode_for_study_topic(db, study_topic.id, current_user.id)
+    if not episode:
+        raise HTTPException(status_code=404, detail="Episode not found")
+    if episode.audio_status != AUDIO_READY or not _stored_audio_key(episode.audio_key):
+        raise HTTPException(status_code=409, detail="Episode audio is not ready.")
+    try:
+        stream = get_episode_storage().stream(episode.audio_key)
+    except (FileNotFoundError, AudioStorageError) as exc:
+        raise HTTPException(
+            status_code=404, detail="Episode audio was not found."
+        ) from exc
+    return StreamingResponse(stream, media_type="audio/wav")
+
+
+def _stored_audio_key(key: Optional[str]) -> bool:
+    return bool(key and key.startswith("episodes/"))
 
 
 @app.post("/api/v1/generate-quiz-from-url", response_model=QuizResponse)

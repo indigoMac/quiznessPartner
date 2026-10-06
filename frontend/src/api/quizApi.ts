@@ -222,6 +222,21 @@ export const generateStudyEpisode = async (
   }
 };
 
+export const generateStudyAudio = async (
+  studyTopicId: number
+): Promise<Episode> => {
+  try {
+    const response = await api.post<Episode>(
+      `/api/v1/study-topics/${studyTopicId}/episode/audio`
+    );
+    return response.data;
+  } catch (error) {
+    const detail = errorDetail(error);
+    if (detail) throw new Error(detail);
+    throw error;
+  }
+};
+
 export const loadOrCreateEpisode = async (
   studyTopicId: number
 ): Promise<Episode> => {

@@ -128,12 +128,18 @@ export interface ExplainQuestionResponse {
 }
 
 export type EpisodeStatus = "pending" | "ready" | "failed";
+export type EpisodeAudioStatus = "none" | "generating" | "ready" | "failed";
 export type EpisodeSpeaker = "host_a" | "host_b";
 
 export interface EpisodeSegment {
   chapter: string;
   speaker: EpisodeSpeaker;
   text: string;
+}
+
+export interface SegmentTiming {
+  start: number;
+  end: number;
 }
 
 export interface Episode {
@@ -143,4 +149,8 @@ export interface Episode {
   title?: string | null;
   script?: EpisodeSegment[] | null;
   error_message?: string | null;
+  audio_status?: EpisodeAudioStatus;
+  audio_error?: string | null;
+  duration_seconds?: number | null;
+  segment_timings?: SegmentTiming[] | null;
 }
