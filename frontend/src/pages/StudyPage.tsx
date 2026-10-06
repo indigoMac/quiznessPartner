@@ -1,5 +1,8 @@
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import Button from "../components/Button";
+import EpisodePlayer from "../components/EpisodePlayer";
+import { activeSegmentIndex, chapterStarts } from "../episodePlayback";
 import {
   useGenerateStudyAudio,
   useGenerateStudyEpisode,
@@ -15,15 +18,19 @@ function topicIdFromParam(id: string | undefined): number | null {
 }
 
 function groupByChapter(script: EpisodeSegment[]) {
-  const chapters: { chapter: string; lines: EpisodeSegment[] }[] = [];
-  for (const line of script) {
+  const chapters: {
+    chapter: string;
+    lines: { segment: EpisodeSegment; index: number }[];
+  }[] = [];
+  script.forEach((segment, index) => {
     const current = chapters[chapters.length - 1];
-    if (current && current.chapter === line.chapter) {
+    const line = { segment, index };
+    if (current && current.chapter === segment.chapter) {
       current.lines.push(line);
     } else {
-      chapters.push({ chapter: line.chapter, lines: [line] });
+      chapters.push({ chapter: segment.chapter, lines: [line] });
     }
-  }
+  });
   return chapters;
 }
 
@@ -31,11 +38,46 @@ function hostLabel(speaker: EpisodeSegment["speaker"]) {
   return speaker === "host_a" ? "Host A" : "Host B";
 }
 
-function hostLineClass(speaker: EpisodeSegment["speaker"]) {
-  if (speaker === "host_a") {
-    return "rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 dark:border-teal-900 dark:bg-teal-950/40";
-  }
-  return "rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900 dark:bg-amber-950/40";
+function hostLineClass(speaker: EpisodeSegment["speaker"], active: boolean) {
+  const tone =
+    speaker === "host_a"
+      ? "border-teal-200 bg-teal-50 dark:border-teal-900 dark:bg-teal-950/40"
+      : "border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40";
+  const current = active ? "ring-2 ring-inset ring-teal-800 dark:ring-teal-300" : "";
+  return `min-w-0 max-w-full break-words rounded-xl border px-4 py-3 ${tone} ${current}`;
+}
+
+function HostLine({
+  line,
+  active,
+}: {
+  line: EpisodeSegment;
+  active: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!active) return;
+    ref.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [active]);
+
+  return (
+    <div
+      ref={ref}
+      data-testid="host-line"
+      data-speaker={line.speaker}
+      data-active={active ? "true" : "false"}
+      aria-current={active ? "true" : undefined}
+      className={hostLineClass(line.speaker, active)}
+    >
+      <p className="text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-stone-400">
+        {hostLabel(line.speaker)}
+      </p>
+      <p className="mt-1 break-words text-stone-800 dark:text-stone-100">
+        {line.text}
+      </p>
+    </div>
+  );
 }
 
 function audioFailureMessage(episode: Episode | undefined, audioError: unknown) {
@@ -99,10 +141,20 @@ export default function StudyPage() {
   const startAudio = () => {
     if (topicId) generateAudio.mutate(topicId);
   };
+  const [currentTime, setCurrentTime] = useState(0);
   const audioStatus = episode?.audio_status ?? "none";
   const audioGenerating = audioStatus === "generating" || generateAudio.isPending;
   const audioFailed =
     !audioGenerating && (audioStatus === "failed" || generateAudio.isError);
+  const audioReady = Boolean(script) && audioStatus === "ready" && !audioGenerating;
+  const activeIndex =
+    audioReady && episode?.segment_timings
+      ? activeSegmentIndex(episode.segment_timings, currentTime)
+      : -1;
+
+  useEffect(() => {
+    setCurrentTime(0);
+  }, [topicId]);
 
   if (!topicId || (topicQuery.isError && !topic)) {
     const message =
@@ -123,7 +175,7 @@ export default function StudyPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <div className="card p-5 sm:p-6">
         <p className="page-kicker mb-2">Episode</p>
         <h2 className="page-title text-2xl sm:text-3xl mb-2">
@@ -164,10 +216,13 @@ export default function StudyPage() {
             Generate audio
           </Button>
         )}
-        {script && audioStatus === "ready" && (
-          <p className="mt-4 text-stone-600 dark:text-stone-300" data-testid="audio-ready">
-            Audio is ready.
-          </p>
+        {audioReady && topicId && script && (
+          <EpisodePlayer
+            studyTopicId={topicId}
+            durationSeconds={episode?.duration_seconds ?? null}
+            chapters={chapterStarts(script, episode?.segment_timings)}
+            onTimeUpdate={setCurrentTime}
+          />
         )}
       </div>
 
@@ -198,26 +253,18 @@ export default function StudyPage() {
         groupByChapter(script).map((chapter, chapterIndex) => (
           <section
             key={`${chapter.chapter}-${chapterIndex}`}
-            className="card p-5 sm:p-6 space-y-4"
+            className="card min-w-0 space-y-4 p-5 sm:p-6"
           >
             <h3 className="font-display text-xl font-semibold">
               {chapter.chapter}
             </h3>
             <div className="space-y-3">
-              {chapter.lines.map((line, index) => (
-                <div
-                  key={`${chapter.chapter}-${index}`}
-                  data-testid="host-line"
-                  data-speaker={line.speaker}
-                  className={hostLineClass(line.speaker)}
-                >
-                  <p className="text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-stone-400">
-                    {hostLabel(line.speaker)}
-                  </p>
-                  <p className="mt-1 text-stone-800 dark:text-stone-100">
-                    {line.text}
-                  </p>
-                </div>
+              {chapter.lines.map((line) => (
+                <HostLine
+                  key={`${line.index}-${line.segment.speaker}`}
+                  line={line.segment}
+                  active={line.index === activeIndex}
+                />
               ))}
             </div>
           </section>

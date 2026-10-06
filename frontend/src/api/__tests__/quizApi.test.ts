@@ -46,6 +46,8 @@ vi.mock("axios", () => {
           response: { use: vi.fn() },
         },
       })),
+      isAxiosError: (error: unknown) =>
+        Boolean(error && typeof error === "object" && "isAxiosError" in error),
     },
   };
 });
@@ -65,6 +67,7 @@ import {
   getStudyEpisode,
   generateStudyEpisode,
   generateStudyAudio,
+  getEpisodeAudio,
 } from "../quizApi";
 import API_BASE_URL from "../config";
 
@@ -181,6 +184,36 @@ describe("Quiz API", () => {
       (call) => call[0] === "/api/v1/study-topics/4/episode"
     );
     expect(episodePost).toBeTruthy();
+  });
+
+  it("loads episode audio as a file", async () => {
+    await getEpisodeAudio(4);
+
+    const mockAxios = (await import("axios")).default;
+    const instance = mockAxios.create();
+    const getCall = instance.get as unknown as jest.Mock;
+    const audioGet = getCall.mock.calls.find(
+      (call) => call[0] === "/api/v1/study-topics/4/episode/audio"
+    );
+    expect(audioGet?.[1]).toEqual({ responseType: "blob" });
+  });
+
+  it("reads an audio error returned as a blob", async () => {
+    const mockAxios = (await import("axios")).default;
+    const instance = mockAxios.create();
+    (instance.get as unknown as jest.Mock).mockRejectedValueOnce({
+      isAxiosError: true,
+      response: {
+        data: new Blob(
+          [JSON.stringify({ detail: "Episode audio was not found." })],
+          { type: "application/json" }
+        ),
+      },
+    });
+
+    await expect(getEpisodeAudio(4)).rejects.toThrow(
+      "Episode audio was not found."
+    );
   });
 
   it("starts episode audio", async () => {

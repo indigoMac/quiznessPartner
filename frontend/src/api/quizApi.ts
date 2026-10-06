@@ -183,6 +183,36 @@ function isMissingEpisode(error: unknown): boolean {
   return axios.isAxiosError(error) && error.response?.status === 404;
 }
 
+async function readBlob(data: Blob): Promise<string> {
+  if (typeof data.text === "function") return data.text();
+  if (typeof data.arrayBuffer === "function") {
+    const bytes = await data.arrayBuffer();
+    return new TextDecoder().decode(bytes);
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(data);
+  });
+}
+
+async function errorMessage(error: unknown): Promise<string | null> {
+  const detail = errorDetail(error);
+  if (detail) return detail;
+  if (!axios.isAxiosError(error) || !(error.response?.data instanceof Blob)) {
+    return null;
+  }
+  const raw = await readBlob(error.response.data);
+  try {
+    const parsed = JSON.parse(raw) as { detail?: unknown };
+    if (typeof parsed.detail === "string") return parsed.detail;
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 export const getStudyTopic = async (
   studyTopicId: number
 ): Promise<StudyTopicDetail> => {
@@ -217,6 +247,20 @@ export const generateStudyEpisode = async (
     return response.data;
   } catch (error) {
     const detail = errorDetail(error);
+    if (detail) throw new Error(detail);
+    throw error;
+  }
+};
+
+export const getEpisodeAudio = async (studyTopicId: number): Promise<Blob> => {
+  try {
+    const response = await api.get<Blob>(
+      `/api/v1/study-topics/${studyTopicId}/episode/audio`,
+      { responseType: "blob" }
+    );
+    return response.data;
+  } catch (error) {
+    const detail = await errorMessage(error);
     if (detail) throw new Error(detail);
     throw error;
   }

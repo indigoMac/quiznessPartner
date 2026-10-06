@@ -1,9 +1,17 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import StudyPage from "../StudyPage";
 import type { Episode, StudyTopicDetail } from "../../types/api";
+
+const audioApi = vi.hoisted(() => ({
+  getEpisodeAudio: vi.fn(),
+}));
+
+vi.mock("../../api/quizApi", () => ({
+  getEpisodeAudio: (...args: unknown[]) => audioApi.getEpisodeAudio(...args),
+}));
 
 const hooks = vi.hoisted(() => ({
   topic: {
@@ -70,10 +78,57 @@ function renderStudyPage() {
   );
 }
 
+const readyEpisode: Episode = {
+  id: 9,
+  study_topic_id: 4,
+  status: "ready",
+  title: "How cells divide",
+  script: [
+    { chapter: "Chapter One", speaker: "host_a", text: "Opening line" },
+    { chapter: "Chapter One", speaker: "host_b", text: "Reply line" },
+    { chapter: "Chapter Two", speaker: "host_a", text: "Next line" },
+  ],
+  audio_status: "ready",
+  duration_seconds: 20,
+  segment_timings: [
+    { start: 0, end: 8 },
+    { start: 8, end: 12 },
+    { start: 12, end: 20 },
+  ],
+};
+
+async function playerControls() {
+  const play = await screen.findByRole("button", { name: "Play" });
+  expect(play).toBeEnabled();
+  return screen.getByTestId("episode-audio") as HTMLAudioElement;
+}
+
 describe("StudyPage", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   beforeEach(() => {
     hooks.mutate.mockReset();
     hooks.generateAudio.mockReset();
+    audioApi.getEpisodeAudio.mockReset();
+    audioApi.getEpisodeAudio.mockResolvedValue(
+      new Blob(["RIFF"], { type: "audio/wav" })
+    );
+    if (typeof URL.createObjectURL !== "function") {
+      Object.defineProperty(URL, "createObjectURL", {
+        configurable: true,
+        value: vi.fn(() => "blob:episode-audio"),
+      });
+    } else {
+      vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:episode-audio");
+    }
+    if (typeof URL.revokeObjectURL !== "function") {
+      Object.defineProperty(URL, "revokeObjectURL", {
+        configurable: true,
+        value: vi.fn(),
+      });
+    }
     hooks.topic = {
       data: topic,
       isLoading: false,
@@ -147,7 +202,12 @@ describe("StudyPage", () => {
     expect(lines[2]).toHaveTextContent("Host A");
     expect(lines[2]).toHaveTextContent("Next line");
     expect(lines[0].className).not.toEqual(lines[1].className);
+    expect(lines.every((line) => line.getAttribute("data-active") === "false")).toBe(
+      true
+    );
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("episode-player")).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Chapters" })).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Generate audio" })
     ).toBeInTheDocument();
@@ -238,5 +298,84 @@ describe("StudyPage", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /try again/i }));
     expect(hooks.mutate).toHaveBeenCalledWith(4);
+  });
+
+  it("highlights the segment for the current time", async () => {
+    hooks.episode.data = readyEpisode;
+    const scroll = vi.mocked(window.HTMLElement.prototype.scrollIntoView);
+
+    renderStudyPage();
+    const audio = await playerControls();
+    const lines = screen.getAllByTestId("host-line");
+    expect(lines[0]).toHaveAttribute("data-active", "true");
+    expect(lines[1]).toHaveAttribute("data-active", "false");
+    scroll.mockClear();
+
+    audio.currentTime = 8;
+    fireEvent.timeUpdate(audio);
+
+    expect(lines[1]).toHaveAttribute("data-active", "true");
+    expect(lines[0]).toHaveAttribute("data-active", "false");
+    expect(lines[1]).toHaveAttribute("aria-current", "true");
+    expect(scroll).toHaveBeenCalled();
+  });
+
+  it("seeks to a chapter start", async () => {
+    hooks.episode.data = readyEpisode;
+    renderStudyPage();
+    const audio = await playerControls();
+
+    fireEvent.click(screen.getByRole("button", { name: "Chapter Two" }));
+
+    expect(audio.currentTime).toBe(12);
+    const lines = screen.getAllByTestId("host-line");
+    expect(lines[2]).toHaveAttribute("data-active", "true");
+    expect(lines[0]).toHaveAttribute("data-active", "false");
+  });
+
+  it("plays, pauses, and seeks from the slider", async () => {
+    hooks.episode.data = readyEpisode;
+    const play = vi
+      .spyOn(HTMLMediaElement.prototype, "play")
+      .mockImplementation(function mockPlay(this: HTMLMediaElement) {
+        this.dispatchEvent(new Event("play"));
+        return Promise.resolve();
+      });
+    const pause = vi
+      .spyOn(HTMLMediaElement.prototype, "pause")
+      .mockImplementation(function mockPause(this: HTMLMediaElement) {
+        this.dispatchEvent(new Event("pause"));
+      });
+
+    renderStudyPage();
+    const audio = await playerControls();
+    fireEvent.click(screen.getByRole("button", { name: "Play" }));
+    expect(play).toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+    expect(pause).toHaveBeenCalled();
+
+    fireEvent.change(screen.getByRole("slider", { name: "Seek" }), {
+      target: { value: "5" },
+    });
+    expect(audio.currentTime).toBe(5);
+    expect(screen.getAllByTestId("host-line")[0]).toHaveAttribute("data-active", "true");
+  });
+
+  it("shows an audio load error and keeps the script", async () => {
+    hooks.episode.data = readyEpisode;
+    audioApi.getEpisodeAudio.mockRejectedValue(
+      new Error("Episode audio was not found.")
+    );
+
+    renderStudyPage();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Episode audio was not found."
+    );
+    expect(screen.getByText("Opening line")).toBeInTheDocument();
+    expect(screen.getByText("Next line")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Play" })).not.toBeInTheDocument();
   });
 });
