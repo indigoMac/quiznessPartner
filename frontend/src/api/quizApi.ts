@@ -11,6 +11,8 @@ import type {
   PracticeStudyTopicForm,
   ExplainQuestionRequest,
   ExplainQuestionResponse,
+  SaveStudyMaterialForm,
+  StudyTopicDetail,
 } from "../types/api";
 
 const api = axios.create({
@@ -137,6 +139,35 @@ export const listMyQuizzes = async (): Promise<QuizListResponse> => {
     throw new Error(detail);
   }
   return response.json();
+};
+
+export const saveStudyMaterial = async (
+  data: SaveStudyMaterialForm
+): Promise<StudyTopicDetail> => {
+  const formData = new FormData();
+  if (data.file) {
+    formData.append("file", data.file);
+  }
+  if (data.content) {
+    formData.append("content", data.content);
+  }
+  if (data.url) {
+    formData.append("url", data.url);
+  }
+  if (data.topic) {
+    formData.append("topic", data.topic);
+  }
+
+  const response = await api.post<StudyTopicDetail>(
+    "/api/v1/study-topics",
+    formData,
+    {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    }
+  );
+  return response.data;
 };
 
 export const practiceStudyTopic = async (

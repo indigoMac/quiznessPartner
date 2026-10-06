@@ -1,6 +1,18 @@
 // Mock the hooks
 const mockMutateAsync = vi.fn().mockResolvedValue({ id: "123" });
 const mockUrlMutateAsync = vi.fn().mockResolvedValue({ id: "456" });
+const mockSaveMutateAsync = vi.fn().mockResolvedValue({ id: 9, title: "Notes" });
+const mockNavigate = vi.fn();
+
+vi.mock("react-router-dom", async () => {
+  const actual = await vi.importActual<typeof import("react-router-dom")>(
+    "react-router-dom"
+  );
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  };
+});
 
 const pendingMutation = {
   mutate: vi.fn(),
@@ -29,6 +41,10 @@ vi.mock("../../hooks/useQuiz", () => ({
   useUploadDocument: () => ({
     ...pendingMutation,
     mutateAsync: vi.fn().mockResolvedValue({ id: "123" }),
+  }),
+  useSaveStudyMaterial: () => ({
+    ...pendingMutation,
+    mutateAsync: mockSaveMutateAsync,
   }),
 }));
 
@@ -224,6 +240,29 @@ describe("CreateQuiz", () => {
       num_questions: 5,
       difficulty: "hard",
     });
+  });
+
+  it("saves material without opening a quiz", async () => {
+    mockNavigate.mockClear();
+    mockSaveMutateAsync.mockClear();
+    render(<CreateQuiz />, { wrapper });
+
+    fireEvent.click(screen.getByText(/enter text/i));
+    fireEvent.change(screen.getByLabelText(/enter your text/i), {
+      target: { value: "Notes about cells" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /save material/i }));
+    });
+
+    expect(mockSaveMutateAsync).toHaveBeenCalledWith({
+      content: "Notes about cells",
+      topic: undefined,
+    });
+    expect(mockNavigate).toHaveBeenCalledWith("/dashboard");
+    expect(mockNavigate).not.toHaveBeenCalledWith(
+      expect.stringMatching(/^\/quiz\//)
+    );
   });
 
   it("shows validation error when submitting without a URL", async () => {

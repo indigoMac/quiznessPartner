@@ -57,6 +57,11 @@ function StudyTopicCard({
             {topic.quiz_count} {topic.quiz_count === 1 ? "quiz" : "quizzes"} ·{" "}
             {topic.completed} completed
           </p>
+          {topic.source_label && (
+            <p className="mt-1 text-sm text-stone-500 dark:text-stone-400 break-all">
+              {topic.source_label}
+            </p>
+          )}
         </div>
         {topic.can_practice && topic.id && (
           <Button
@@ -69,11 +74,17 @@ function StudyTopicCard({
           </Button>
         )}
       </div>
-      <ul className="space-y-3">
-        {topic.quizzes.map((quiz) => (
-          <QuizRow key={quiz.id} quiz={quiz} />
-        ))}
-      </ul>
+      {topic.quizzes.length === 0 ? (
+        <p className="text-sm text-stone-500 dark:text-stone-400 italic">
+          No quizzes yet.
+        </p>
+      ) : (
+        <ul className="space-y-3">
+          {topic.quizzes.map((quiz) => (
+            <QuizRow key={quiz.id} quiz={quiz} />
+          ))}
+        </ul>
+      )}
     </li>
   );
 }
@@ -84,7 +95,6 @@ export default function Dashboard() {
   const { data, isLoading, error } = useMyQuizzes();
   const practiceMutation = usePracticeStudyTopic();
 
-  const quizzes = data?.quizzes ?? [];
   const studyTopics = data?.study_topics ?? [];
   const totalQuizzes = data?.total_quizzes ?? 0;
   const completed = data?.completed ?? 0;
@@ -135,7 +145,7 @@ export default function Dashboard() {
             Could not generate a new quiz on that topic. Please try again.
           </p>
         )}
-        {!isLoading && !error && quizzes.length === 0 && (
+        {!isLoading && !error && studyTopics.length === 0 && (
           <div className="rounded-xl border border-dashed border-stone-300 dark:border-stone-700 px-4 py-8 text-center">
             <p className="text-stone-600 dark:text-stone-300 italic">
               No quizzes created yet.

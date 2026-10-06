@@ -9,6 +9,7 @@ import {
   checkHealth,
   listMyQuizzes,
   practiceStudyTopic,
+  saveStudyMaterial,
 } from "../api/quizApi";
 import type {
   GenerateQuizForm,
@@ -16,6 +17,7 @@ import type {
   UploadDocumentForm,
   AnswerSubmission,
   PracticeStudyTopicForm,
+  SaveStudyMaterialForm,
 } from "../types/api";
 
 // Hook for checking API health
@@ -51,6 +53,16 @@ export const useUploadDocument = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: UploadDocumentForm) => uploadDocument(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["my-quizzes"] });
+    },
+  });
+};
+
+export const useSaveStudyMaterial = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: SaveStudyMaterialForm) => saveStudyMaterial(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["my-quizzes"] });
     },

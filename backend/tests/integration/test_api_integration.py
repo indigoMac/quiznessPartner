@@ -860,3 +860,172 @@ def test_explain_rejects_negative_selected_answer():
     )
 
     assert response.status_code == 422
+
+
+def _topic_count() -> int:
+    db = TestingSessionLocal()
+    try:
+        return db.query(StudyTopic).count()
+    finally:
+        db.close()
+
+
+def _login(email: str) -> dict:
+    db = TestingSessionLocal()
+    try:
+        hashed_password = get_password_hash("testpassword")
+        db.add(User(email=email, hashed_password=hashed_password))
+        db.commit()
+    finally:
+        db.close()
+    response = client.post(
+        "/api/v1/auth/token",
+        data={"username": email, "password": "testpassword"},
+    )
+    assert response.status_code == 200
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+def test_create_study_topic_requires_auth(setup_db):
+    response = client.post(
+        "/api/v1/study-topics",
+        data={"content": "Notes about cells."},
+    )
+    assert response.status_code == 401
+    assert _topic_count() == 0
+
+
+def test_save_text_creates_a_topic_without_a_quiz(auth_token):
+    response = client.post(
+        "/api/v1/study-topics",
+        headers=auth_token,
+        data={"content": "Cells divide by mitosis.", "topic": "Biology"},
+    )
+    assert response.status_code == 200
+    saved = response.json()
+    assert saved["id"]
+    assert saved["title"] == "Biology"
+    assert saved["topic"] == "Biology"
+    assert saved["can_practice"] is True
+    assert saved["source_url"] is None
+
+    owner = client.get(f"/api/v1/study-topics/{saved['id']}", headers=auth_token)
+    assert owner.status_code == 200
+    assert owner.json()["id"] == saved["id"]
+
+    listed = client.get("/api/v1/quizzes", headers=auth_token).json()
+    assert listed["total_quizzes"] == 0
+    assert listed["total_topics"] == 1
+    assert listed["study_topics"][0]["id"] == saved["id"]
+    assert listed["study_topics"][0]["quiz_count"] == 0
+    assert listed["study_topics"][0]["quizzes"] == []
+    assert listed["study_topics"][0]["source_label"] == "Saved text"
+
+
+def test_save_text_file_uses_the_filename_as_the_title(auth_token):
+    response = client.post(
+        "/api/v1/study-topics",
+        headers=auth_token,
+        files={
+            "file": ("notes.txt", io.BytesIO(b"Cells divide by mitosis."), "text/plain")
+        },
+    )
+    assert response.status_code == 200
+    saved = response.json()
+    assert saved["title"] == "notes.txt"
+    assert saved["topic"] is None
+
+    listed = client.get("/api/v1/quizzes", headers=auth_token).json()
+    assert listed["total_quizzes"] == 0
+    assert listed["study_topics"][0]["title"] == "notes.txt"
+
+
+@patch("main.extract_text_from_pdf")
+def test_save_pdf_creates_a_topic_owned_by_the_user(mock_extract_text, auth_token):
+    mock_extract_text.return_value = "Extracted text from the paper."
+    response = client.post(
+        "/api/v1/study-topics",
+        headers=auth_token,
+        files={"file": ("paper.pdf", io.BytesIO(b"%PDF-1.5"), "application/pdf")},
+    )
+    assert response.status_code == 200
+    saved = response.json()
+    assert saved["title"] == "paper.pdf"
+    assert saved["id"]
+
+    other = _login("other@example.com")
+    hidden = client.get(f"/api/v1/study-topics/{saved['id']}", headers=other)
+    assert hidden.status_code == 404
+
+    other_list = client.get("/api/v1/quizzes", headers=other).json()
+    assert other_list["total_topics"] == 0
+    assert other_list["quizzes"] == []
+
+
+@patch("main.fetch_url_text")
+def test_save_url_uses_the_page_title(mock_fetch_url, auth_token):
+    mock_fetch_url.return_value = ("Rivers carve valleys over time.", "River systems")
+    response = client.post(
+        "/api/v1/study-topics",
+        headers=auth_token,
+        data={"url": "https://example.com/rivers"},
+    )
+    assert response.status_code == 200
+    saved = response.json()
+    assert saved["title"] == "River systems"
+    assert saved["source_url"] == "https://example.com/rivers"
+    mock_fetch_url.assert_called_once_with("https://example.com/rivers")
+
+    listed = client.get("/api/v1/quizzes", headers=auth_token).json()
+    assert listed["study_topics"][0]["source_label"] == "https://example.com/rivers"
+    assert listed["total_quizzes"] == 0
+
+
+@patch("main.extract_text_from_pdf")
+def test_save_pdf_with_no_text_creates_nothing(mock_extract_text, auth_token):
+    mock_extract_text.return_value = "   "
+    response = client.post(
+        "/api/v1/study-topics",
+        headers=auth_token,
+        files={"file": ("empty.pdf", io.BytesIO(b"%PDF-1.5"), "application/pdf")},
+    )
+    assert response.status_code == 400
+    assert "No text could be extracted" in response.json()["detail"]
+    assert _topic_count() == 0
+
+
+def test_save_url_rejects_a_private_address_and_creates_nothing(auth_token):
+    response = client.post(
+        "/api/v1/study-topics",
+        headers=auth_token,
+        data={"url": "http://127.0.0.1/secret"},
+    )
+    assert response.status_code == 400
+    assert "not allowed" in response.json()["detail"]
+    assert _topic_count() == 0
+
+
+def test_save_study_material_rejects_a_missing_source(auth_token):
+    response = client.post("/api/v1/study-topics", headers=auth_token, data={})
+    assert response.status_code == 400
+    assert "Provide a file, text, or a URL" in response.json()["detail"]
+    assert _topic_count() == 0
+
+
+@patch("main.index_study_topic")
+@patch("main.retrieval_enabled", return_value=True)
+def test_save_study_material_keeps_the_topic_when_indexing_fails(
+    _mock_enabled, mock_index, auth_token
+):
+    from services.retrieval_service import RetrievalError
+
+    mock_index.side_effect = RetrievalError("Could not embed the source material.")
+    response = client.post(
+        "/api/v1/study-topics",
+        headers=auth_token,
+        data={"content": "Cells divide by mitosis.", "topic": "Biology"},
+    )
+    assert response.status_code == 200
+    assert response.json()["title"] == "Biology"
+    assert _topic_count() == 1
+    mock_index.assert_called_once()

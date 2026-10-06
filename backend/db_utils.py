@@ -238,8 +238,20 @@ def list_user_quizzes(db: Session, user_id: int) -> Tuple[List[dict], int, int]:
     return summaries, total_quizzes, completed
 
 
+def _source_label(topic: StudyTopic) -> Optional[str]:
+    """Short description of where a topic's material came from."""
+    if topic.source_url:
+        return topic.source_url
+    if topic.source_text and topic.source_text.strip():
+        return "Saved text"
+    return None
+
+
 def list_user_study_topics(db: Session, user_id: int) -> List[dict]:
-    """Group a user's quizzes into study topics for the dashboard."""
+    """Group a user's quizzes into study topics for the dashboard.
+
+    A topic saved without a quiz still appears when it has source text.
+    """
     quizzes, _, _ = list_user_quizzes(db, user_id)
     topics = (
         db.query(StudyTopic)
@@ -258,7 +270,8 @@ def list_user_study_topics(db: Session, user_id: int) -> List[dict]:
     summaries = []
     for topic in topics:
         topic_quizzes = grouped.get(topic.id, [])
-        if not topic_quizzes:
+        has_source = bool(topic.source_text and topic.source_text.strip())
+        if not topic_quizzes and not has_source:
             continue
         completed_in_topic = sum(
             1 for quiz in topic_quizzes if quiz["attempt_count"] > 0
@@ -269,9 +282,8 @@ def list_user_study_topics(db: Session, user_id: int) -> List[dict]:
                 "title": topic.title,
                 "topic": topic.topic,
                 "source_url": topic.source_url,
-                "can_practice": bool(
-                    (topic.source_text and topic.source_text.strip()) or topic.topic
-                ),
+                "source_label": _source_label(topic),
+                "can_practice": bool(has_source or topic.topic),
                 "quiz_count": len(topic_quizzes),
                 "completed": completed_in_topic,
                 "quizzes": topic_quizzes,
@@ -285,6 +297,7 @@ def list_user_study_topics(db: Session, user_id: int) -> List[dict]:
                 "title": "Other quizzes",
                 "topic": None,
                 "source_url": None,
+                "source_label": None,
                 "can_practice": False,
                 "quiz_count": len(ungrouped),
                 "completed": sum(1 for quiz in ungrouped if quiz["attempt_count"] > 0),

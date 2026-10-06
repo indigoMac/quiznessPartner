@@ -15,6 +15,8 @@ An AI-powered quiz generation platform that creates interactive quizzes from doc
 - **Interactive Interface**: Modern React frontend with TypeScript
 - **Real-time Results**: Instant quiz scoring and feedback
 
+The podcast learning plan is in [docs/podcast-learning](docs/podcast-learning/README.md). Work the stages in order.
+
 ## 📋 Prerequisites
 
 - **Docker & Docker Compose**: For containerized development

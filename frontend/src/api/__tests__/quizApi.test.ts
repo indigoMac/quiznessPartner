@@ -59,6 +59,7 @@ import {
   checkHealth,
   listMyQuizzes,
   practiceStudyTopic,
+  saveStudyMaterial,
   explainQuestion,
 } from "../quizApi";
 import API_BASE_URL from "../config";
@@ -143,6 +144,20 @@ describe("Quiz API", () => {
     const [url, payload] = postCall.mock.calls[0];
     expect(url).toBe("/api/v1/generate-quiz-from-url");
     expect(payload).toEqual(data);
+  });
+
+  it("saves study material", async () => {
+    const data = { content: "Notes about cells", topic: "Biology" };
+    await saveStudyMaterial(data);
+
+    const mockAxios = (await import("axios")).default;
+    const instance = mockAxios.create();
+    const postCall = instance.post as unknown as jest.Mock;
+    const [url, payload] = postCall.mock.calls[0];
+    expect(url).toBe("/api/v1/study-topics");
+    expect(payload).toBeInstanceOf(FormData);
+    expect(payload.get("content")).toBe("Notes about cells");
+    expect(payload.get("topic")).toBe("Biology");
   });
 
   it("practices a study topic", async () => {

@@ -100,6 +100,25 @@ class TestStudyTopics:
         assert grouped[0]["can_practice"] is True
         assert {quiz["id"] for quiz in grouped[0]["quizzes"]} == {first.id, second.id}
 
+    def test_includes_a_topic_saved_without_quizzes(self, db_session):
+        user = UserFactory.create(db_session)
+        topic = create_study_topic(
+            db_session,
+            user_id=user.id,
+            title="notes.txt",
+            source_text="Cells divide by mitosis.",
+        )
+        db_session.commit()
+
+        grouped = list_user_study_topics(db_session, user.id)
+
+        assert len(grouped) == 1
+        assert grouped[0]["id"] == topic.id
+        assert grouped[0]["quiz_count"] == 0
+        assert grouped[0]["quizzes"] == []
+        assert grouped[0]["can_practice"] is True
+        assert grouped[0]["source_label"] == "Saved text"
+
 
 class TestRecordQuizResult:
     def test_stores_user_id_when_provided(self, db_session):

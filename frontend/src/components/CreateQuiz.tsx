@@ -8,6 +8,7 @@ import Button from "./Button";
 import {
   useGenerateQuiz,
   useGenerateQuizFromUrl,
+  useSaveStudyMaterial,
   useUploadDocument,
 } from "../hooks/useQuiz";
 import type { AxiosError } from "axios";
@@ -69,6 +70,7 @@ export default function CreateQuiz() {
   const generateQuizMutation = useGenerateQuiz();
   const generateFromUrlMutation = useGenerateQuizFromUrl();
   const uploadDocumentMutation = useUploadDocument();
+  const saveMaterialMutation = useSaveStudyMaterial();
 
   const handleTabChange = (tab: TabType) => {
     setActiveTab(tab);
@@ -80,10 +82,49 @@ export default function CreateQuiz() {
     setError(null);
   };
 
+  const sourceError = () => {
+    if (activeTab === "upload" && !file) {
+      return "Please select a file to upload";
+    }
+    if (activeTab === "text" && !content) {
+      return "Please enter some text content";
+    }
+    if (activeTab === "url") {
+      const trimmed = sourceUrl.trim();
+      if (!trimmed) {
+        return "Please enter a URL";
+      }
+      try {
+        const parsed = new URL(trimmed);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          return "Enter a public http or https URL.";
+        }
+      } catch {
+        return "Enter a valid URL.";
+      }
+    }
+    return null;
+  };
+
+  const materialInput = () => {
+    const trimmedTopic = topic || undefined;
+    if (activeTab === "upload" && file) {
+      return { file, topic: trimmedTopic };
+    }
+    if (activeTab === "text") {
+      return { content, topic: trimmedTopic };
+    }
+    return { url: sourceUrl.trim(), topic: trimmedTopic };
+  };
+
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const validationError = sourceError();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
     if (!file) {
-      setError("Please select a file to upload");
       return;
     }
 
@@ -109,8 +150,9 @@ export default function CreateQuiz() {
 
   const handleTextSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!content) {
-      setError("Please enter some text content");
+    const validationError = sourceError();
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
@@ -136,26 +178,15 @@ export default function CreateQuiz() {
 
   const handleUrlSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmed = sourceUrl.trim();
-    if (!trimmed) {
-      setError("Please enter a URL");
-      return;
-    }
-
-    try {
-      const parsed = new URL(trimmed);
-      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-        setError("Enter a public http or https URL.");
-        return;
-      }
-    } catch {
-      setError("Enter a valid URL.");
+    const validationError = sourceError();
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
     try {
       const result = await generateFromUrlMutation.mutateAsync({
-        url: trimmed,
+        url: sourceUrl.trim(),
         topic: topic || undefined,
         num_questions: numQuestions,
         difficulty,
@@ -173,6 +204,27 @@ export default function CreateQuiz() {
     }
   };
 
+  const handleSaveMaterial = async () => {
+    const validationError = sourceError();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    try {
+      await saveMaterialMutation.mutateAsync(materialInput());
+      navigate("/dashboard");
+    } catch (error: unknown) {
+      console.error("Error saving study material:", error);
+      setError(
+        apiErrorMessage(
+          error,
+          "An error occurred while saving your material. Please try again."
+        )
+      );
+    }
+  };
+
   const submitHandler =
     activeTab === "upload"
       ? handleUploadSubmit
@@ -180,10 +232,12 @@ export default function CreateQuiz() {
         ? handleUrlSubmit
         : handleTextSubmit;
 
+  const isSaving = saveMaterialMutation.isPending;
   const isLoading =
     uploadDocumentMutation.isPending ||
     generateQuizMutation.isPending ||
-    generateFromUrlMutation.isPending;
+    generateFromUrlMutation.isPending ||
+    isSaving;
 
   const isSubmitDisabled =
     isLoading ||
@@ -333,14 +387,24 @@ export default function CreateQuiz() {
                 </div>
               )}
 
-              <div>
+              <div className="grid gap-3 sm:grid-cols-2">
                 <Button
                   type="submit"
                   disabled={isSubmitDisabled}
-                  isLoading={isLoading}
+                  isLoading={isLoading && !isSaving}
                   className="w-full"
                 >
-                  {isLoading ? "Creating Quiz..." : "Create Quiz"}
+                  {isLoading && !isSaving ? "Creating Quiz..." : "Create Quiz"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={isSubmitDisabled}
+                  isLoading={isSaving}
+                  className="w-full"
+                  onClick={handleSaveMaterial}
+                >
+                  {isSaving ? "Saving..." : "Save material"}
                 </Button>
               </div>
             </div>

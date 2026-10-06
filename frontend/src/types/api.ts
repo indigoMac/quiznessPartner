@@ -81,10 +81,26 @@ export interface StudyTopicSummary {
   title: string;
   topic?: string | null;
   source_url?: string | null;
+  source_label?: string | null;
   can_practice: boolean;
   quiz_count: number;
   completed: number;
   quizzes: QuizSummary[];
+}
+
+export interface StudyTopicDetail {
+  id: number;
+  title: string;
+  topic?: string | null;
+  source_url?: string | null;
+  can_practice: boolean;
+}
+
+export interface SaveStudyMaterialForm {
+  file?: File;
+  content?: string;
+  url?: string;
+  topic?: string;
 }
 
 export interface QuizListResponse {

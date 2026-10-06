@@ -158,10 +158,19 @@ class StudyTopicSummary(BaseModel):
     title: str
     topic: Optional[str] = None
     source_url: Optional[str] = None
+    source_label: Optional[str] = None
     can_practice: bool
     quiz_count: int
     completed: int
     quizzes: List[QuizSummary]
+
+
+class StudyTopicResponse(BaseModel):
+    id: int
+    title: str
+    topic: Optional[str] = None
+    source_url: Optional[str] = None
+    can_practice: bool
 
 
 class QuizListResponse(BaseModel):
@@ -170,6 +179,78 @@ class QuizListResponse(BaseModel):
     total_quizzes: int
     completed: int
     total_topics: int
+
+
+def _optional_label(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def _study_topic_title(
+    requested_topic: Optional[str],
+    page_title: Optional[str] = None,
+    filename: Optional[str] = None,
+) -> str:
+    return requested_topic or page_title or filename or "Study topic"
+
+
+def _can_practice_topic(study_topic) -> bool:
+    source = study_topic.source_text or ""
+    return bool(source.strip() or study_topic.topic)
+
+
+def _study_topic_response(study_topic) -> "StudyTopicResponse":
+    return StudyTopicResponse(
+        id=study_topic.id,
+        title=study_topic.title,
+        topic=study_topic.topic,
+        source_url=study_topic.source_url,
+        can_practice=_can_practice_topic(study_topic),
+    )
+
+
+async def _text_from_upload(file: UploadFile) -> str:
+    """Read a PDF or text upload, or raise the same errors as quiz upload."""
+    if not file.filename or not file.filename.lower().endswith((".pdf", ".txt")):
+        raise HTTPException(
+            status_code=400,
+            detail="Only PDF and TXT files are supported",
+        )
+
+    if file.filename.lower().endswith(".pdf"):
+        text = extract_text_from_pdf(file.file)
+    else:
+        raw = await file.read()
+        text = raw.decode("utf-8")
+
+    if not text.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="No text could be extracted from the file",
+        )
+    return text
+
+
+def _store_study_material(
+    db: Session,
+    user_id: int,
+    title: str,
+    topic: Optional[str],
+    source_text: str,
+    source_url: Optional[str] = None,
+):
+    study_topic = create_study_topic(
+        db,
+        user_id=user_id,
+        title=title,
+        topic=topic,
+        source_text=source_text_for_storage(source_text),
+        source_url=source_url,
+    )
+    _index_source_material(db, study_topic.id, source_text)
+    return study_topic
 
 
 def _serialize_created_at(value) -> Optional[str]:
@@ -299,24 +380,7 @@ async def upload_document(
 ):
     """Upload a PDF or text file and generate a quiz from it."""
     try:
-        if not file.filename or not file.filename.lower().endswith((".pdf", ".txt")):
-            raise HTTPException(
-                status_code=400,
-                detail="Only PDF and TXT files are supported",
-            )
-
-        if file.filename.lower().endswith(".pdf"):
-            text = extract_text_from_pdf(file.file)
-        else:
-            content = await file.read()
-            text = content.decode("utf-8")
-
-        if not text.strip():
-            raise HTTPException(
-                status_code=400,
-                detail="No text could be extracted from the file",
-            )
-
+        text = await _text_from_upload(file)
         generated = as_generated_quiz(
             generate_quiz_from_text(
                 text,
@@ -340,6 +404,80 @@ async def upload_document(
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Internal server error") from exc
+
+
+@app.post("/api/v1/study-topics", response_model=StudyTopicResponse)
+async def create_study_material(
+    file: Optional[UploadFile] = File(None),
+    content: Optional[str] = Form(None),
+    url: Optional[str] = Form(None),
+    topic: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Save a PDF, text, or public URL as a study topic without creating a quiz."""
+    try:
+        requested_topic = _optional_label(topic)
+        cleaned_content = _optional_label(content)
+        cleaned_url = _optional_label(url)
+        has_file = file is not None and bool(file.filename)
+        provided = sum(
+            1
+            for present in (has_file, bool(cleaned_content), bool(cleaned_url))
+            if present
+        )
+        if provided != 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Provide a file, text, or a URL",
+            )
+
+        page_title = None
+        filename = None
+        source_url = None
+        if file is not None and file.filename:
+            text = await _text_from_upload(file)
+            filename = file.filename
+        elif cleaned_url:
+            text, page_title = fetch_url_text(cleaned_url)
+            source_url = cleaned_url
+        else:
+            text = cleaned_content or ""
+
+        if not text.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="No text could be extracted from the file",
+            )
+
+        study_topic = _store_study_material(
+            db,
+            current_user.id,
+            title=_study_topic_title(requested_topic, page_title, filename),
+            topic=requested_topic,
+            source_text=text,
+            source_url=source_url,
+        )
+        return _study_topic_response(study_topic)
+    except UrlFetchError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
+
+
+@app.get("/api/v1/study-topics/{study_topic_id}", response_model=StudyTopicResponse)
+async def get_study_material(
+    study_topic_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Return one study topic owned by the current user."""
+    study_topic = get_study_topic_for_user(db, study_topic_id, current_user.id)
+    if not study_topic:
+        raise HTTPException(status_code=404, detail="Study topic not found")
+    return _study_topic_response(study_topic)
 
 
 @app.post("/api/v1/generate-quiz-from-url", response_model=QuizResponse)
@@ -409,6 +547,7 @@ async def list_quizzes(
                 title=item["title"],
                 topic=item["topic"],
                 source_url=item["source_url"],
+                source_label=item.get("source_label"),
                 can_practice=item["can_practice"],
                 quiz_count=item["quiz_count"],
                 completed=item["completed"],
