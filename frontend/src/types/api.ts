@@ -94,7 +94,12 @@ export interface StudyTopicDetail {
   topic?: string | null;
   source_url?: string | null;
   can_practice: boolean;
+  has_source: boolean;
+  quizzes: QuizSummary[];
 }
+
+export const INSUFFICIENT_STUDY_MATERIAL =
+  "This study topic does not have enough material to practice again.";
 
 export interface SaveStudyMaterialForm {
   file?: File;

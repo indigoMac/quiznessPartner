@@ -299,12 +299,18 @@ export const loadOrCreateEpisode = async (
 export const practiceStudyTopic = async (
   data: PracticeStudyTopicForm
 ): Promise<QuizResponse> => {
-  const response = await api.post<QuizResponse>(
-    `/api/v1/study-topics/${data.study_topic_id}/practice`,
-    {
-      num_questions: data.num_questions ?? 5,
-      difficulty: data.difficulty ?? "medium",
-    }
-  );
-  return response.data;
+  try {
+    const response = await api.post<QuizResponse>(
+      `/api/v1/study-topics/${data.study_topic_id}/practice`,
+      {
+        num_questions: data.num_questions ?? 5,
+        difficulty: data.difficulty ?? "medium",
+      }
+    );
+    return response.data;
+  } catch (error) {
+    const detail = errorDetail(error);
+    if (detail) throw new Error(detail);
+    throw error;
+  }
 };

@@ -3,7 +3,8 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import StudyPage from "../StudyPage";
-import type { Episode, StudyTopicDetail } from "../../types/api";
+import type { Episode, QuizSummary, StudyTopicDetail } from "../../types/api";
+import { INSUFFICIENT_STUDY_MATERIAL } from "../../types/api";
 
 const audioApi = vi.hoisted(() => ({
   getEpisodeAudio: vi.fn(),
@@ -40,6 +41,12 @@ const hooks = vi.hoisted(() => ({
     isError: false,
     error: null as Error | null,
   },
+  practice: {
+    mutateAsync: vi.fn(),
+    isPending: false,
+    isError: false,
+    error: null as Error | null,
+  },
 }));
 
 vi.mock("../../hooks/useQuiz", () => ({
@@ -58,6 +65,7 @@ vi.mock("../../hooks/useQuiz", () => ({
     isError: hooks.audio.isError,
     error: hooks.audio.error,
   }),
+  usePracticeStudyTopic: () => hooks.practice,
 }));
 
 const topic: StudyTopicDetail = {
@@ -66,6 +74,8 @@ const topic: StudyTopicDetail = {
   topic: "Biology",
   source_url: null,
   can_practice: true,
+  has_source: true,
+  quizzes: [],
 };
 
 function renderStudyPage() {
@@ -73,6 +83,7 @@ function renderStudyPage() {
     <MemoryRouter initialEntries={["/study/4"]}>
       <Routes>
         <Route path="/study/:id" element={<StudyPage />} />
+        <Route path="/quiz/:id" element={<p>Opened quiz</p>} />
       </Routes>
     </MemoryRouter>
   );
@@ -153,6 +164,11 @@ describe("StudyPage", () => {
       isError: false,
       error: null,
     };
+    hooks.practice.mutateAsync.mockReset();
+    hooks.practice.mutateAsync.mockResolvedValue({ id: "15" });
+    hooks.practice.isPending = false;
+    hooks.practice.isError = false;
+    hooks.practice.error = null;
   });
 
   it("renders host lines in chapter order", () => {
@@ -187,6 +203,7 @@ describe("StudyPage", () => {
     expect(screen.getByText("How cells divide")).toBeInTheDocument();
     const chapters = screen.getAllByRole("heading", { level: 3 });
     expect(chapters.map((heading) => heading.textContent)).toEqual([
+      "Quizzes",
       "Chapter One",
       "Chapter Two",
     ]);
@@ -377,5 +394,66 @@ describe("StudyPage", () => {
     expect(screen.getByText("Opening line")).toBeInTheDocument();
     expect(screen.getByText("Next line")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Play" })).not.toBeInTheDocument();
+  });
+
+  it("generates a test from the topic and opens the quiz", async () => {
+    const savedQuiz: QuizSummary = {
+      id: 42,
+      title: "Mitosis check",
+      topic: "Biology",
+      created_at: "2026-01-15T00:00:00",
+      question_count: 5,
+      attempt_count: 1,
+      best_score: 4,
+      study_topic_id: 4,
+      difficulty: "medium",
+    };
+    hooks.topic.data = { ...topic, quizzes: [savedQuiz] };
+    hooks.episode.data = {
+      id: 9,
+      study_topic_id: 4,
+      status: "ready",
+      title: "How cells divide",
+      script: [
+        { chapter: "Chapter One", speaker: "host_a", text: "Opening line" },
+      ],
+      audio_status: "none",
+    };
+
+    renderStudyPage();
+
+    const quizLink = screen.getByRole("link", { name: /mitosis check/i });
+    expect(quizLink).toHaveAttribute("href", "/quiz/42");
+    expect(quizLink).toHaveTextContent("5 questions");
+    expect(quizLink).toHaveTextContent("Medium");
+    expect(quizLink).toHaveTextContent("Best score: 4");
+    expect(screen.getByRole("button", { name: "Generate audio" })).toBeEnabled();
+
+    fireEvent.change(screen.getByLabelText("Number of Questions"), {
+      target: { value: "3" },
+    });
+    fireEvent.change(screen.getByLabelText("Difficulty"), {
+      target: { value: "hard" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Generate a test" }));
+
+    expect(hooks.practice.mutateAsync).toHaveBeenCalledWith({
+      study_topic_id: 4,
+      num_questions: 3,
+      difficulty: "hard",
+    });
+    expect(await screen.findByText("Opened quiz")).toBeInTheDocument();
+  });
+
+  it("keeps generate a test disabled when the topic has no source", () => {
+    hooks.topic.data = { ...topic, has_source: false, can_practice: false };
+    hooks.practice.isError = true;
+    hooks.practice.error = new Error(INSUFFICIENT_STUDY_MATERIAL);
+
+    renderStudyPage();
+
+    expect(screen.getByRole("button", { name: "Generate a test" })).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveTextContent(INSUFFICIENT_STUDY_MATERIAL);
+    expect(hooks.practice.mutateAsync).not.toHaveBeenCalled();
   });
 });

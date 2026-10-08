@@ -97,8 +97,11 @@ export const usePracticeStudyTopic = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: PracticeStudyTopicForm) => practiceStudyTopic(data),
-    onSuccess: () => {
+    onSuccess: (_quiz, variables) => {
       queryClient.invalidateQueries({ queryKey: ["my-quizzes"] });
+      queryClient.invalidateQueries({
+        queryKey: ["study-topic", variables.study_topic_id],
+      });
     },
   });
 };

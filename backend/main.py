@@ -202,6 +202,8 @@ class StudyTopicResponse(BaseModel):
     topic: Optional[str] = None
     source_url: Optional[str] = None
     can_practice: bool
+    has_source: bool
+    quizzes: List[QuizSummary] = Field(default_factory=list)
 
 
 class EpisodeSegmentResponse(BaseModel):
@@ -251,19 +253,57 @@ def _study_topic_title(
     return requested_topic or page_title or filename or "Study topic"
 
 
+INSUFFICIENT_STUDY_MATERIAL = (
+    "This study topic does not have enough material to practice again."
+)
+
+
 def _can_practice_topic(study_topic) -> bool:
     source = study_topic.source_text or ""
     return bool(source.strip() or study_topic.topic)
 
 
-def _study_topic_response(study_topic) -> "StudyTopicResponse":
+def _topic_has_source(study_topic) -> bool:
+    return bool((study_topic.source_text or "").strip())
+
+
+def _quiz_summary(item: dict) -> QuizSummary:
+    return QuizSummary(
+        id=item["id"],
+        title=item["title"],
+        topic=item["topic"],
+        created_at=_serialize_created_at(item["created_at"]),
+        question_count=item["question_count"],
+        attempt_count=item["attempt_count"],
+        best_score=item["best_score"],
+        study_topic_id=item.get("study_topic_id"),
+        difficulty=item.get("difficulty") or DEFAULT_QUIZ_DIFFICULTY,
+    )
+
+
+def _study_topic_response(
+    study_topic, quizzes: Optional[List[QuizSummary]] = None
+) -> "StudyTopicResponse":
     return StudyTopicResponse(
         id=study_topic.id,
         title=study_topic.title,
         topic=study_topic.topic,
         source_url=study_topic.source_url,
         can_practice=_can_practice_topic(study_topic),
+        has_source=_topic_has_source(study_topic),
+        quizzes=quizzes or [],
     )
+
+
+def _quizzes_for_topic(
+    db: Session, user_id: int, study_topic_id: int
+) -> List[QuizSummary]:
+    summaries, _, _ = list_user_quizzes(db, user_id)
+    return [
+        _quiz_summary(item)
+        for item in summaries
+        if item.get("study_topic_id") == study_topic_id
+    ]
 
 
 def _episode_response(episode) -> "EpisodeResponse":
@@ -559,7 +599,10 @@ async def get_study_material(
 ):
     """Return one study topic owned by the current user."""
     study_topic = _require_owned_topic(db, study_topic_id, current_user.id)
-    return _study_topic_response(study_topic)
+    return _study_topic_response(
+        study_topic,
+        _quizzes_for_topic(db, current_user.id, study_topic.id),
+    )
 
 
 @app.post(
@@ -757,20 +800,7 @@ async def list_quizzes(
     quizzes, total_quizzes, completed = list_user_quizzes(db, current_user.id)
     study_topics = list_user_study_topics(db, current_user.id)
     return QuizListResponse(
-        quizzes=[
-            QuizSummary(
-                id=item["id"],
-                title=item["title"],
-                topic=item["topic"],
-                created_at=_serialize_created_at(item["created_at"]),
-                question_count=item["question_count"],
-                attempt_count=item["attempt_count"],
-                best_score=item["best_score"],
-                study_topic_id=item.get("study_topic_id"),
-                difficulty=item.get("difficulty") or DEFAULT_QUIZ_DIFFICULTY,
-            )
-            for item in quizzes
-        ],
+        quizzes=[_quiz_summary(item) for item in quizzes],
         study_topics=[
             StudyTopicSummary(
                 id=item["id"],
@@ -781,20 +811,7 @@ async def list_quizzes(
                 can_practice=item["can_practice"],
                 quiz_count=item["quiz_count"],
                 completed=item["completed"],
-                quizzes=[
-                    QuizSummary(
-                        id=quiz["id"],
-                        title=quiz["title"],
-                        topic=quiz["topic"],
-                        created_at=_serialize_created_at(quiz["created_at"]),
-                        question_count=quiz["question_count"],
-                        attempt_count=quiz["attempt_count"],
-                        best_score=quiz["best_score"],
-                        study_topic_id=quiz.get("study_topic_id"),
-                        difficulty=quiz.get("difficulty") or DEFAULT_QUIZ_DIFFICULTY,
-                    )
-                    for quiz in item["quizzes"]
-                ],
+                quizzes=[_quiz_summary(quiz) for quiz in item["quizzes"]],
             )
             for item in study_topics
         ],
@@ -825,10 +842,7 @@ async def practice_study_topic(
         if not label:
             raise HTTPException(
                 status_code=400,
-                detail=(
-                    "This study topic does not have enough material "
-                    "to practice again."
-                ),
+                detail=INSUFFICIENT_STUDY_MATERIAL,
             )
         source_text = f"Create a quiz about {label}."
 

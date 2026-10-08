@@ -715,6 +715,93 @@ def test_practice_study_topic_requires_auth(setup_db):
 
 
 @patch("main.generate_quiz_from_text")
+def test_practice_uses_stored_source_and_rejects_another_user(
+    mock_generate_quiz, auth_token
+):
+    source = "Rivers carve valleys and carry sediment to the sea."
+    mock_generate_quiz.side_effect = [
+        GeneratedQuiz(
+            title="Rivers",
+            topic="Geography",
+            questions=[
+                {
+                    "question": "What do rivers carry?",
+                    "options": ["Sediment", "Mountains", "Clouds", "Lava"],
+                    "correct_answer": 0,
+                }
+            ],
+        ),
+        GeneratedQuiz(
+            title="Rivers practice",
+            topic="Geography",
+            questions=[
+                {
+                    "question": "Where does sediment go?",
+                    "options": ["The sea", "The sky", "A cave", "A dune"],
+                    "correct_answer": 0,
+                }
+            ],
+        ),
+    ]
+
+    created = client.post(
+        "/api/v1/generate-quiz",
+        headers=auth_token,
+        json={"content": source, "topic": "Geography", "num_questions": 1},
+    ).json()
+    topic_id = created["study_topic_id"]
+
+    other = _login("practice-other@example.com")
+    forbidden = client.post(
+        f"/api/v1/study-topics/{topic_id}/practice",
+        headers=other,
+        json={"num_questions": 1, "difficulty": "easy"},
+    )
+    assert forbidden.status_code == 404
+
+    response = client.post(
+        f"/api/v1/study-topics/{topic_id}/practice",
+        headers=auth_token,
+        json={"num_questions": 1, "difficulty": "hard"},
+    )
+    assert response.status_code == 200
+    practiced = response.json()
+    assert practiced["study_topic_id"] == topic_id
+    assert practiced["questions"][0]["question"] == "Where does sediment go?"
+
+    db = TestingSessionLocal()
+    try:
+        stored = (
+            db.query(StudyTopic).filter(StudyTopic.id == topic_id).one().source_text
+        )
+    finally:
+        db.close()
+    practice_call = mock_generate_quiz.call_args_list[1]
+    assert practice_call.args[0] == stored
+    assert stored == source
+    assert practice_call.kwargs["difficulty"] == "hard"
+
+    detail = client.get(
+        f"/api/v1/study-topics/{topic_id}", headers=auth_token
+    ).json()
+    assert detail["has_source"] is True
+    assert {quiz["title"] for quiz in detail["quizzes"]} == {
+        "Rivers",
+        "Rivers practice",
+    }
+    assert {quiz["question_count"] for quiz in detail["quizzes"]} == {1}
+
+
+def test_study_topic_without_source_reports_no_source(auth_token):
+    topic_id = _save_topic_without_source()
+    detail = client.get(
+        f"/api/v1/study-topics/{topic_id}", headers=auth_token
+    ).json()
+    assert detail["has_source"] is False
+    assert detail["quizzes"] == []
+
+
+@patch("main.generate_quiz_from_text")
 def test_list_quizzes_returns_current_user_quizzes(mock_generate_quiz, auth_token):
     mock_generate_quiz.return_value = [
         {

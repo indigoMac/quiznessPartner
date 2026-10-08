@@ -6,17 +6,17 @@ After the episode, generate a quiz from the same study topic.
 
 ## Work
 
-- [ ] On `/study/:id`, add "Generate a test" once the topic has source text. It is available for a ready script even when audio has not been generated.
-- [ ] Call the existing practice endpoint with the study topic id, the chosen question count, and difficulty. Reuse the controls from `CreateQuiz` rather than inventing new ones.
-- [ ] On success, navigate to `/quiz/:id` for the new quiz.
-- [ ] Show the topic's existing quizzes on the study page, using the same summary fields the dashboard already renders.
-- [ ] Practice-again on the quiz page stays as it is.
+- [x] On `/study/:id`, add "Generate a test" once the topic has source text. It is available for a ready script even when audio has not been generated.
+- [x] Call the existing practice endpoint with the study topic id, the chosen question count, and difficulty. Reuse the controls from `CreateQuiz` rather than inventing new ones.
+- [x] On success, navigate to `/quiz/:id` for the new quiz.
+- [x] Show the topic's existing quizzes on the study page, using the same summary fields the dashboard already renders.
+- [x] Practice-again on the quiz page stays as it is.
 
 ## Tests
 
-- [ ] Frontend test: the button calls practice with the topic id and routes to the returned quiz.
-- [ ] Frontend test: the button stays disabled, with the API error visible, when the topic has no source.
-- [ ] API regression: practice still 404s for another user's topic and still creates questions from `source_text`.
+- [x] Frontend test: the button calls practice with the topic id and routes to the returned quiz.
+- [x] Frontend test: the button stays disabled, with the API error visible, when the topic has no source.
+- [x] API regression: practice still 404s for another user's topic and still creates questions from `source_text`.
 
 ## Done when
 

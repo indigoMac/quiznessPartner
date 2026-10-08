@@ -1,15 +1,24 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import Button from "../components/Button";
 import EpisodePlayer from "../components/EpisodePlayer";
+import QuizRow from "../components/QuizRow";
+import QuizSettingsFields from "../components/QuizSettingsFields";
 import { activeSegmentIndex, chapterStarts } from "../episodePlayback";
 import {
   useGenerateStudyAudio,
   useGenerateStudyEpisode,
+  usePracticeStudyTopic,
   useStudyEpisode,
   useStudyTopic,
 } from "../hooks/useQuiz";
-import type { Episode, EpisodeSegment } from "../types/api";
+import {
+  DEFAULT_QUIZ_DIFFICULTY,
+  INSUFFICIENT_STUDY_MATERIAL,
+  type Episode,
+  type EpisodeSegment,
+  type QuizDifficulty,
+} from "../types/api";
 
 function topicIdFromParam(id: string | undefined): number | null {
   const parsed = Number(id);
@@ -113,13 +122,23 @@ function failureMessage(
   return "The episode could not be written. Please try again.";
 }
 
+function questionCountIsValid(value: number) {
+  return Number.isInteger(value) && value >= 1 && value <= 20;
+}
+
 export default function StudyPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const topicId = topicIdFromParam(id);
   const topicQuery = useStudyTopic(topicId);
   const episodeQuery = useStudyEpisode(topicQuery.isSuccess ? topicId : null);
   const generate = useGenerateStudyEpisode();
   const generateAudio = useGenerateStudyAudio();
+  const practice = usePracticeStudyTopic();
+  const [numQuestions, setNumQuestions] = useState(5);
+  const [difficulty, setDifficulty] = useState<QuizDifficulty>(
+    DEFAULT_QUIZ_DIFFICULTY
+  );
 
   const topic = topicQuery.data;
   const episode = episodeQuery.data ?? generate.data ?? generateAudio.data;
@@ -154,7 +173,32 @@ export default function StudyPage() {
 
   useEffect(() => {
     setCurrentTime(0);
+    setNumQuestions(5);
+    setDifficulty(DEFAULT_QUIZ_DIFFICULTY);
   }, [topicId]);
+
+  const hasSource = Boolean(topic?.has_source);
+  const quizzes = topic?.quizzes ?? [];
+  const practiceError = practice.isError
+    ? practice.error instanceof Error && practice.error.message
+      ? practice.error.message
+      : "Could not generate a test. Please try again."
+    : null;
+  const testError = hasSource ? practiceError : INSUFFICIENT_STUDY_MATERIAL;
+
+  const generateTest = async () => {
+    if (!topicId || !hasSource || !questionCountIsValid(numQuestions)) return;
+    try {
+      const result = await practice.mutateAsync({
+        study_topic_id: topicId,
+        num_questions: numQuestions,
+        difficulty,
+      });
+      navigate(`/quiz/${result.id}`);
+    } catch (error) {
+      console.error("Error generating a test:", error);
+    }
+  };
 
   if (!topicId || (topicQuery.isError && !topic)) {
     const message =
@@ -225,6 +269,50 @@ export default function StudyPage() {
           />
         )}
       </div>
+
+      {topic && (
+        <section className="card min-w-0 space-y-4 p-5 sm:p-6">
+          <h3 className="font-display text-xl font-semibold">Quizzes</h3>
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void generateTest();
+            }}
+          >
+            <QuizSettingsFields
+              numQuestions={numQuestions}
+              difficulty={difficulty}
+              onNumQuestionsChange={setNumQuestions}
+              onDifficultyChange={setDifficulty}
+            />
+            {testError && (
+              <p className="text-red-700 dark:text-red-400 break-words" role="alert">
+                {testError}
+              </p>
+            )}
+            <Button
+              type="submit"
+              className="w-full sm:w-auto"
+              disabled={!hasSource || !questionCountIsValid(numQuestions)}
+              isLoading={practice.isPending}
+            >
+              Generate a test
+            </Button>
+          </form>
+          {quizzes.length === 0 ? (
+            <p className="text-sm text-stone-500 dark:text-stone-400 italic">
+              No quizzes yet.
+            </p>
+          ) : (
+            <ul className="space-y-3">
+              {quizzes.map((quiz) => (
+                <QuizRow key={quiz.id} quiz={quiz} />
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       {writing && (
         <div className="card p-5 sm:p-6 flex items-center gap-3">

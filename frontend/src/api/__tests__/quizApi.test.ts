@@ -228,6 +228,23 @@ describe("Quiz API", () => {
     expect(audioPost).toBeTruthy();
   });
 
+  it("reads a practice error from the API", async () => {
+    const mockAxios = (await import("axios")).default;
+    const instance = mockAxios.create();
+    (instance.post as unknown as jest.Mock).mockRejectedValueOnce({
+      isAxiosError: true,
+      response: {
+        data: { detail: "This study topic does not have enough material to practice again." },
+      },
+    });
+
+    await expect(
+      practiceStudyTopic({ study_topic_id: 7, num_questions: 5 })
+    ).rejects.toThrow(
+      "This study topic does not have enough material to practice again."
+    );
+  });
+
   it("practices a study topic", async () => {
     const data = { study_topic_id: 7, num_questions: 5 };
     await practiceStudyTopic(data);
