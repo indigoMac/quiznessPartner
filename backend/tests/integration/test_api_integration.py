@@ -1,6 +1,7 @@
 import io
 import json
 import wave
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from unittest.mock import ANY, MagicMock, patch
 
@@ -15,7 +16,7 @@ from auth.auth_utils import get_password_hash
 from db_utils import get_db
 from main import app
 from models.base import Base
-from models.episode import AUDIO_GENERATING, AUDIO_NONE, Episode
+from models.episode import AUDIO_GENERATING, AUDIO_NONE, AUDIO_READY, Episode
 from models.question import Question
 from models.quiz import Quiz
 from models.result import Result
@@ -1385,6 +1386,84 @@ def test_episode_audio_reaches_ready_for_the_owner(auth_token, monkeypatch, tmp_
         headers=other,
     )
     assert hidden_post.status_code == 404
+
+
+def _mark_audio_ready(topic_id: int, media_dir: Path, wav: bytes | None) -> str:
+    db = TestingSessionLocal()
+    try:
+        episode = db.query(Episode).filter(Episode.study_topic_id == topic_id).one()
+        key = f"episodes/{episode.id}.wav"
+        episode.audio_status = AUDIO_READY
+        episode.audio_key = key
+        episode.duration_seconds = 2
+        episode.segment_timings = [
+            {"start": 0.0, "end": 1.0},
+            {"start": 1.0, "end": 2.0},
+        ]
+        db.commit()
+    finally:
+        db.close()
+    if wav is not None:
+        path = media_dir / key
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(wav)
+    return key
+
+
+def test_missing_ready_audio_is_generated_again(auth_token, monkeypatch, tmp_path):
+    topic_id = _ready_episode()
+    _use_test_audio_session(monkeypatch, tmp_path)
+    _mark_audio_ready(topic_id, tmp_path, None)
+
+    missing = client.get(
+        f"/api/v1/study-topics/{topic_id}/episode/audio",
+        headers=auth_token,
+    )
+    assert missing.status_code == 404
+
+    def fake_speech(_text, _voice):
+        return _silence_wav(1.0)
+
+    monkeypatch.setattr("services.episode_audio.synthesize_speech", fake_speech)
+    started = client.post(
+        f"/api/v1/study-topics/{topic_id}/episode/audio",
+        headers=auth_token,
+    )
+    assert started.status_code == 200
+    assert started.json()["audio_status"] == "generating"
+
+    audio = client.get(
+        f"/api/v1/study-topics/{topic_id}/episode/audio",
+        headers=auth_token,
+    )
+    assert audio.status_code == 200
+    assert audio.content.startswith(b"RIFF")
+
+
+def test_stored_ready_audio_is_not_generated_again(auth_token, monkeypatch, tmp_path):
+    topic_id = _ready_episode()
+    _use_test_audio_session(monkeypatch, tmp_path)
+    _mark_audio_ready(topic_id, tmp_path, b"RIFFkept")
+    calls = []
+    monkeypatch.setattr(
+        "main.synthesize_episode_audio",
+        lambda episode_id: calls.append(episode_id),
+    )
+
+    response = client.post(
+        f"/api/v1/study-topics/{topic_id}/episode/audio",
+        headers=auth_token,
+    )
+    assert response.status_code == 200
+    assert response.json()["audio_status"] == "ready"
+    assert calls == []
+
+    audio = client.get(
+        f"/api/v1/study-topics/{topic_id}/episode/audio",
+        headers=auth_token,
+    )
+    assert audio.status_code == 200
+    assert audio.content == b"RIFFkept"
 
 
 def test_episode_audio_post_while_generating_does_not_start_twice(

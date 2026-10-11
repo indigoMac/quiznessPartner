@@ -266,6 +266,8 @@ export default function StudyPage() {
             durationSeconds={episode?.duration_seconds ?? null}
             chapters={chapterStarts(script, episode?.segment_timings)}
             onTimeUpdate={setCurrentTime}
+            onGenerateAgain={startAudio}
+            generatingAgain={generateAudio.isPending}
           />
         )}
       </div>

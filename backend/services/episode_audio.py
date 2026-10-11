@@ -25,7 +25,7 @@ from models.episode import (
     EPISODE_READY,
     Episode,
 )
-from services.episode_storage import get_episode_storage
+from services.episode_storage import get_episode_storage, stored_audio_exists
 
 logger = logging.getLogger(__name__)
 
@@ -58,10 +58,12 @@ def audio_generation_in_progress(episode, now: Optional[datetime] = None) -> boo
 def begin_episode_audio(db: Session, episode: Episode) -> str:
     """Claim the single audio job, or leave an active one alone.
 
-    A ready file is left in place. Generating again is stage 6.
+    A ready file that is still stored is left in place. A ready row whose
+    object is gone can be spoken again. Generating over a stored file is
+    stage 6.
     """
     db.refresh(episode)
-    if episode.audio_status == AUDIO_READY:
+    if episode.audio_status == AUDIO_READY and stored_audio_exists(episode.audio_key):
         return AUDIO_JOB_ALREADY_READY
     if audio_generation_in_progress(episode):
         return AUDIO_JOB_IN_PROGRESS

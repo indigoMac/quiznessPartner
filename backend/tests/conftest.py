@@ -21,6 +21,7 @@ from sqlalchemy.pool import StaticPool
 # Set test environment before importing app modules
 os.environ["ENVIRONMENT"] = "test"
 os.environ["TESTING"] = "1"
+os.environ["EPISODE_STORAGE"] = "local"
 
 # Import after setting environment
 import db

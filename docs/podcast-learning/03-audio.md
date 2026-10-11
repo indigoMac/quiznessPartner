@@ -19,9 +19,7 @@ Extend `episodes` in a migration.
 
 ## Storage
 
-Add a small storage interface with one implementation that writes under a configurable directory (`EPISODE_MEDIA_DIR`). The database stores the object key, not a filesystem path.
-
-The backend container in `docker-compose.yml` has no file volume today, so a file written inside the container disappears on recreate. Mount `EPISODE_MEDIA_DIR` as a named volume in development. Swap the storage implementation for object storage before production. Do not add that provider in this stage.
+Add a small storage interface. The database stores the object key, not a filesystem path. Local development writes under `EPISODE_MEDIA_DIR` (a named volume in `docker-compose.yml`). When `EPISODE_S3_BUCKET` and its keys are set, the same key is stored in an S3-compatible bucket such as Cloudflare R2, so a deploy does not delete the file. `EPISODE_STORAGE=local` forces the directory.
 
 ## Work
 

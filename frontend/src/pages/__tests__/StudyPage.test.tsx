@@ -394,6 +394,24 @@ describe("StudyPage", () => {
     expect(screen.getByText("Opening line")).toBeInTheDocument();
     expect(screen.getByText("Next line")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Play" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Generate audio" }));
+    expect(hooks.generateAudio).toHaveBeenCalledWith(4);
+  });
+
+  it("does not offer a new recording for a different audio load error", async () => {
+    hooks.episode.data = readyEpisode;
+    audioApi.getEpisodeAudio.mockRejectedValue(
+      new Error("Could not load the episode audio.")
+    );
+
+    renderStudyPage();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not load the episode audio."
+    );
+    expect(
+      screen.queryByRole("button", { name: "Generate audio" })
+    ).not.toBeInTheDocument();
   });
 
   it("generates a test from the topic and opens the quiz", async () => {

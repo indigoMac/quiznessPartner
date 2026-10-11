@@ -6,11 +6,15 @@ import {
 } from "../episodePlayback";
 import Button from "./Button";
 
+const MISSING_AUDIO_MESSAGE = "Episode audio was not found.";
+
 interface EpisodePlayerProps {
   studyTopicId: number;
   durationSeconds: number | null;
   chapters: EpisodeChapter[];
   onTimeUpdate: (time: number) => void;
+  onGenerateAgain?: () => void;
+  generatingAgain?: boolean;
 }
 
 function clampTime(audio: HTMLAudioElement, seconds: number) {
@@ -26,6 +30,8 @@ export default function EpisodePlayer({
   durationSeconds,
   chapters,
   onTimeUpdate,
+  onGenerateAgain,
+  generatingAgain = false,
 }: EpisodePlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const pendingSeek = useRef<number | null>(null);
@@ -132,9 +138,19 @@ export default function EpisodePlayer({
   return (
     <div className="mt-4 min-w-0 max-w-full space-y-3" data-testid="episode-player">
       {loadError ? (
-        <p className="break-words text-red-700 dark:text-red-400" role="alert">
-          {loadError}
-        </p>
+        <div role="alert">
+          <p className="break-words text-red-700 dark:text-red-400">{loadError}</p>
+          {loadError === MISSING_AUDIO_MESSAGE && onGenerateAgain && (
+            <Button
+              type="button"
+              className="mt-4 w-full sm:w-auto"
+              onClick={onGenerateAgain}
+              isLoading={generatingAgain}
+            >
+              Generate audio
+            </Button>
+          )}
+        </div>
       ) : (
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center">
           <Button
