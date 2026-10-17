@@ -27,6 +27,7 @@ from ai_utils import (
     extract_text_from_pdf,
     generate_episode_script,
     generate_quiz_from_text,
+    section_progress,
     source_text_for_storage,
 )
 from auth import auth_router
@@ -203,6 +204,8 @@ class StudyTopicResponse(BaseModel):
     source_url: Optional[str] = None
     can_practice: bool
     has_source: bool
+    section_count: int = 0
+    sections_quizzed: int = 0
     quizzes: List[QuizSummary] = Field(default_factory=list)
 
 
@@ -284,6 +287,11 @@ def _quiz_summary(item: dict) -> QuizSummary:
 def _study_topic_response(
     study_topic, quizzes: Optional[List[QuizSummary]] = None
 ) -> "StudyTopicResponse":
+    saved_quizzes = quizzes or []
+    questions_asked = sum(quiz.question_count for quiz in saved_quizzes)
+    sections_quizzed, section_count = section_progress(
+        study_topic.source_text or "", questions_asked
+    )
     return StudyTopicResponse(
         id=study_topic.id,
         title=study_topic.title,
@@ -291,7 +299,9 @@ def _study_topic_response(
         source_url=study_topic.source_url,
         can_practice=_can_practice_topic(study_topic),
         has_source=_topic_has_source(study_topic),
-        quizzes=quizzes or [],
+        section_count=section_count,
+        sections_quizzed=sections_quizzed,
+        quizzes=saved_quizzes,
     )
 
 

@@ -20,6 +20,20 @@ import {
   type QuizDifficulty,
 } from "../types/api";
 
+function sectionCoverage(
+  sectionCount: number,
+  sectionsQuizzed: number
+): string | null {
+  if (sectionCount <= 0) return null;
+  if (sectionsQuizzed <= 0) {
+    return `This source has ${sectionCount} sections. A test starts at the first one.`;
+  }
+  if (sectionsQuizzed >= sectionCount) {
+    return `Quizzes have used all ${sectionCount} sections. Another test starts again from the beginning.`;
+  }
+  return `Quizzes reach ${sectionsQuizzed} of ${sectionCount} sections. Another test continues through the source.`;
+}
+
 function topicIdFromParam(id: string | undefined): number | null {
   const parsed = Number(id);
   if (!Number.isInteger(parsed) || parsed <= 0) return null;
@@ -178,6 +192,9 @@ export default function StudyPage() {
   }, [topicId]);
 
   const hasSource = Boolean(topic?.has_source);
+  const coverage = topic
+    ? sectionCoverage(topic.section_count, topic.sections_quizzed)
+    : null;
   const quizzes = topic?.quizzes ?? [];
   const practiceError = practice.isError
     ? practice.error instanceof Error && practice.error.message
@@ -275,6 +292,9 @@ export default function StudyPage() {
       {topic && (
         <section className="card min-w-0 space-y-4 p-5 sm:p-6">
           <h3 className="font-display text-xl font-semibold">Quizzes</h3>
+          {coverage && (
+            <p className="text-sm text-stone-600 dark:text-stone-300">{coverage}</p>
+          )}
           <form
             className="space-y-4"
             onSubmit={(event) => {

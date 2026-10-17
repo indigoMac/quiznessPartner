@@ -399,27 +399,53 @@ MAX_QUESTIONS = 20
 # Rounds stop as soon as one adds nothing new; this cap only bounds cost and
 # latency when a model keeps returning a little more each time.
 MAX_TOPUP_ROUNDS = 4
-TOPUP_BUFFER = 2
+
+
+def source_sections(text: str, chunk_size: int = SOURCE_CHUNK_SIZE) -> List[str]:
+    """Split a source into every section, in order, with nothing left out."""
+    cleaned = " ".join((text or "").split())
+    if not cleaned:
+        return []
+    if len(cleaned) <= chunk_size:
+        return [cleaned]
+    # No overlap: a question belongs to one section, and repeating the same
+    # sentences in two sections would quiz the boundary twice.
+    return [
+        chunk.strip()
+        for chunk in split_text(cleaned, chunk_size=chunk_size, chunk_overlap=0)
+        if chunk.strip()
+    ]
+
+
+def sections_for_questions(
+    sections: Sequence[str], existing_count: int, num_questions: int
+) -> List[str]:
+    """The next unread sections, wrapping to the start after the last one."""
+    if not sections or num_questions <= 0:
+        return []
+    start = existing_count % len(sections)
+    return [
+        sections[(start + offset) % len(sections)] for offset in range(num_questions)
+    ]
+
+
+def section_progress(source_text: str, questions_asked: int) -> tuple[int, int]:
+    """How many sections have been used for at least one question."""
+    total = len(source_sections(source_text or ""))
+    if total == 0:
+        return 0, 0
+    return min(max(int(questions_asked), 0), total), total
 
 
 def select_source_chunks(
     text: str, chunk_size: int = SOURCE_CHUNK_SIZE, max_chunks: int = MAX_SOURCE_CHUNKS
 ) -> List[str]:
-    """Split long sources and keep a spread of chunks, not just the opening."""
-    cleaned = " ".join(text.split())
-    if not cleaned:
-        return []
-    if len(cleaned) <= chunk_size:
-        return [cleaned]
+    """Split long sources and keep a spread of chunks, not just the opening.
 
-    # No overlap here: generation already spreads questions across chunks, and
-    # repeating text between them invites duplicate questions. Retrieval uses
-    # overlap because there a straddled passage would otherwise be unfindable.
-    chunks = [
-        chunk.strip()
-        for chunk in split_text(cleaned, chunk_size=chunk_size, chunk_overlap=0)
-        if chunk.strip()
-    ]
+    Episodes use this sample so a lesson stays short. Quizzes use
+    source_sections and walk every section instead.
+    """
+    chunks = source_sections(text, chunk_size=chunk_size)
     if len(chunks) <= max_chunks:
         return chunks
 
@@ -432,13 +458,6 @@ def select_source_chunks(
             selected.append(chunks[index])
             seen.add(index)
     return selected
-
-
-def _question_counts(num_questions: int, chunk_count: int) -> List[int]:
-    if chunk_count <= 0:
-        return []
-    base, remainder = divmod(num_questions, chunk_count)
-    return [base + (1 if i < remainder else 0) for i in range(chunk_count)]
 
 
 def _strip_json_fences(result: str) -> str:
@@ -580,6 +599,7 @@ def _build_quiz_prompt(
     Difficulty: {level}.
     {difficulty_instruction}
     The 'questions' array must contain exactly {num_questions} items.
+    Ask only about the text below. Do not use any other part of the source.
     {avoid}
     Text: {text}
 
@@ -874,17 +894,28 @@ Correct answer: {correct_label}
         ) from exc
 
 
+def _keep_one_question(
+    collector: _QuestionCollector, questions: List[Dict[str, Any]]
+) -> int:
+    """Keep the first new question so the next section is not skipped."""
+    for question in questions:
+        if collector.add([question]):
+            return 1
+    return 0
+
+
 def _top_up_questions(
     collector: _QuestionCollector,
-    chunks: List[str],
+    sections: List[str],
+    start: int,
+    planned: int,
     topic: Optional[str],
     difficulty: str,
 ) -> None:
-    """Ask for more questions when the pass over the chunks came up short.
+    """Ask the following sections when the planned walk came up short.
 
-    Each round asks a small buffer above the shortfall, because some of what
-    comes back will duplicate what we already have. A round that adds nothing
-    new means the source is exhausted, so stop rather than burn more calls.
+    Each round takes the next section and keeps one question. A round that
+    adds nothing new means the model is repeating itself, so stop.
     """
     metrics = _active_metrics.get()
     for attempt in range(MAX_TOPUP_ROUNDS):
@@ -892,19 +923,19 @@ def _top_up_questions(
             return
         if metrics is not None:
             metrics.topup_rounds += 1
-        request = min(collector.shortfall + TOPUP_BUFFER, MAX_QUESTIONS)
+        section = sections[(start + planned + attempt) % len(sections)]
         try:
             part = _generate_from_chunk(
-                chunks[attempt % len(chunks)],
+                section,
                 topic,
-                request,
+                1,
                 collector.recent(),
                 difficulty=difficulty,
             )
         except QuizGenerationError:
             logger.warning("Top-up request %s failed", attempt + 1)
             return
-        if not collector.add(part.questions):
+        if not _keep_one_question(collector, part.questions):
             logger.warning("Top-up request %s returned no new questions", attempt + 1)
             return
 
@@ -918,10 +949,10 @@ def generate_quiz_from_text(
 ) -> GeneratedQuiz:
     """Generate a quiz from text using the configured LLM provider.
 
-    Long sources are split into several chunks so questions cover more than
-    the opening paragraphs. Chunks that return fewer usable questions than
-    they were asked for are made up by follow-up requests, so the caller gets
-    the count it asked for. Defaults to Groq (OpenAI-compatible).
+    The source is split into sections in order. Each requested question uses
+    the next section that earlier questions have not used yet, and the walk
+    returns to the beginning after the last section. A short reply is followed
+    by one question from the next section. Defaults to Groq (OpenAI-compatible).
     """
     metrics = GenerationMetrics()
     token = _active_metrics.set(metrics)
@@ -954,36 +985,44 @@ def _generate_quiz(
         raise QuizGenerationError("No text was provided to generate a quiz from.")
 
     num_questions = max(1, min(int(num_questions), MAX_QUESTIONS))
-    chunks = select_source_chunks(text)
-    if not chunks:
+    sections = source_sections(text)
+    if not sections:
         raise QuizGenerationError("No text was provided to generate a quiz from.")
 
     metrics.requested = num_questions
-    metrics.chunks = len(chunks)
+    metrics.chunks = len(sections)
+    existing_count = len(existing_questions or [])
+    assigned = sections_for_questions(sections, existing_count, num_questions)
     collector = _QuestionCollector(num_questions, existing_questions)
-    counts = _question_counts(num_questions, len(chunks))
     title: Optional[str] = None
     inferred_topic: Optional[str] = topic
 
-    for index, (chunk, count) in enumerate(zip(chunks, counts)):
-        if count <= 0:
-            continue
+    for index, section in enumerate(assigned):
+        if not collector.shortfall:
+            break
         try:
             part = _generate_from_chunk(
-                chunk, topic, count, collector.recent(), difficulty=difficulty
+                section, topic, 1, collector.recent(), difficulty=difficulty
             )
         except QuizGenerationError:
             if not collector.questions:
                 raise
-            logger.warning("Skipping source chunk %s after generation failed", index)
+            logger.warning("Skipping source section %s after generation failed", index)
             continue
 
         if title is None:
             title = part.title
             inferred_topic = part.topic
-        collector.add(part.questions)
+        _keep_one_question(collector, part.questions)
 
-    _top_up_questions(collector, chunks, topic, difficulty)
+    _top_up_questions(
+        collector,
+        sections,
+        existing_count % len(sections),
+        num_questions,
+        topic,
+        difficulty,
+    )
     metrics.delivered = len(collector.questions)
 
     if not collector.questions:
@@ -1013,10 +1052,9 @@ class EpisodeScript:
 
 
 def source_text_for_storage(text: str) -> Optional[str]:
-    """Keep the same representative chunks used for generation."""
-    chunks = select_source_chunks(text)
-    stored = "\n\n".join(chunks).strip()
-    return stored or None
+    """Keep the whole source so a later quiz can reach every section."""
+    cleaned = " ".join((text or "").split())
+    return cleaned or None
 
 
 def _episode_word_count(segments: List[Dict[str, str]]) -> int:

@@ -75,6 +75,8 @@ const topic: StudyTopicDetail = {
   source_url: null,
   can_practice: true,
   has_source: true,
+  section_count: 0,
+  sections_quizzed: 0,
   quizzes: [],
 };
 
@@ -473,5 +475,29 @@ describe("StudyPage", () => {
     expect(screen.getByRole("button", { name: "Generate a test" })).toBeDisabled();
     expect(screen.getByRole("alert")).toHaveTextContent(INSUFFICIENT_STUDY_MATERIAL);
     expect(hooks.practice.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("shows how far quizzes have reached through the source", () => {
+    hooks.topic.data = { ...topic, section_count: 12, sections_quizzed: 5 };
+
+    renderStudyPage();
+
+    expect(
+      screen.getByText(
+        "Quizzes reach 5 of 12 sections. Another test continues through the source."
+      )
+    ).toBeInTheDocument();
+  });
+
+  it("says a finished pass starts again from the beginning", () => {
+    hooks.topic.data = { ...topic, section_count: 4, sections_quizzed: 4 };
+
+    renderStudyPage();
+
+    expect(
+      screen.getByText(
+        "Quizzes have used all 4 sections. Another test starts again from the beginning."
+      )
+    ).toBeInTheDocument();
   });
 });

@@ -17,8 +17,11 @@ from ai_utils import (
     explain_quiz_question,
     extract_text_from_pdf,
     generate_quiz_from_text,
+    section_progress,
     select_explanation_context,
     select_source_chunks,
+    source_sections,
+    source_text_for_storage,
 )
 
 
@@ -267,50 +270,52 @@ class TestAIUtils:
         assert 2 <= len(chunks) <= 4
         assert chunks[0] != chunks[-1]
 
+    def test_source_text_for_storage_keeps_the_whole_source(self):
+        text = " ".join(f"Sentence {index} about rivers." for index in range(800))
+
+        stored = source_text_for_storage(text)
+
+        assert stored is not None
+        assert "Sentence 0 about rivers." in stored
+        assert "Sentence 799 about rivers." in stored
+        assert len(source_sections(stored)) > 4
+
+    def test_section_progress_counts_sections_reached_once(self):
+        text = " ".join(f"Sentence {index} about rivers." for index in range(800))
+        total = len(source_sections(text))
+
+        assert section_progress(text, 0) == (0, total)
+        assert section_progress(text, 2) == (2, total)
+        assert section_progress(text, total + 5) == (total, total)
+        assert section_progress("", 3) == (0, 0)
+
     @patch("ai_utils._chat_completion")
-    def test_generate_quiz_uses_multiple_chunks(self, mock_openai):
-        long_text = "This is a reasonably long test sentence used for chunking. " * 100
+    def test_generate_quiz_continues_at_the_next_section(self, mock_openai):
+        text = "".join(
+            f"Unique sentence {index} covers a different fact about rivers. "
+            for index in range(400)
+        )
+        sections = source_sections(text)
+        assert len(sections) > 4
         mock_openai.side_effect = [
-            json.dumps(
-                {
-                    "title": "Chunked Source Quiz",
-                    "topic": "Study Notes",
-                    "questions": [
-                        {
-                            "question": "Question from the opening?",
-                            "options": ["A", "B", "C", "D"],
-                            "correct_answer": 0,
-                        },
-                        {
-                            "question": "Another opening question?",
-                            "options": ["A", "B", "C", "D"],
-                            "correct_answer": 1,
-                        },
-                    ],
-                }
-            ),
-            json.dumps(
-                [
-                    {
-                        "question": "Question from later in the notes?",
-                        "options": ["A", "B", "C", "D"],
-                        "correct_answer": 2,
-                    }
-                ]
-            ),
+            _quiz_payload(_question("From the later section?")),
+            _quiz_payload(_question("From the section after that?")),
         ]
 
-        result = generate_quiz_from_text(long_text, num_questions=3)
+        result = generate_quiz_from_text(
+            text,
+            num_questions=2,
+            existing_questions=[_question("Already asked?"), _question("Asked too?")],
+        )
 
-        assert result.title == "Chunked Source Quiz"
-        assert result.topic == "Study Notes"
-        assert len(result.questions) == 3
-        assert mock_openai.call_count >= 2
-        assert {item["question"] for item in result.questions} == {
-            "Question from the opening?",
-            "Another opening question?",
-            "Question from later in the notes?",
-        }
+        prompts = [call.args[0] for call in mock_openai.call_args_list]
+        assert sections[2][:80] in prompts[0]
+        assert sections[3][:80] in prompts[1]
+        assert sections[0][:80] not in prompts[0]
+        assert [item["question"] for item in result.questions] == [
+            "From the later section?",
+            "From the section after that?",
+        ]
 
 
 class TestQuestionCount:
@@ -319,23 +324,27 @@ class TestQuestionCount:
     @patch("ai_utils._chat_completion")
     def test_tops_up_when_model_returns_too_few(self, mock_openai):
         mock_openai.side_effect = [
-            _quiz_payload(_question("Q1?"), _question("Q2?")),
-            _quiz_payload(_question("Q3?"), _question("Q4?"), _question("Q5?")),
+            _quiz_payload(_question("Q1?")),
+            _quiz_payload(_question("Q1?")),
+            _quiz_payload(_question("Q2?")),
+            _quiz_payload(_question("Q3?")),
         ]
 
-        result = generate_quiz_from_text("Short source text.", num_questions=5)
+        result = generate_quiz_from_text("Short source text.", num_questions=3)
 
-        assert len(result.questions) == 5
-        assert mock_openai.call_count == 2
+        assert [item["question"] for item in result.questions] == ["Q1?", "Q2?", "Q3?"]
+        assert mock_openai.call_count == 4
 
     @patch("ai_utils._chat_completion")
     def test_top_up_ignores_repeated_questions(self, mock_openai):
         mock_openai.side_effect = [
             _quiz_payload(_question("Q1?"), _question("Q2?")),
             _quiz_payload(_question("Q2?"), _question("Q3?")),
+            _quiz_payload(_question("Q2?")),
+            _quiz_payload(_question("Q3?")),
         ]
 
-        result = generate_quiz_from_text("Short source text.", num_questions=4)
+        result = generate_quiz_from_text("Short source text.", num_questions=3)
 
         assert [item["question"] for item in result.questions] == [
             "Q1?",
@@ -350,7 +359,7 @@ class TestQuestionCount:
         result = generate_quiz_from_text("Short source text.", num_questions=5)
 
         assert len(result.questions) == 1
-        assert mock_openai.call_count == 2
+        assert mock_openai.call_count == 6
 
     @patch("ai_utils._chat_completion")
     def test_reaches_the_count_across_several_short_replies(self, mock_openai):
@@ -430,7 +439,9 @@ class TestGenerationMetrics:
     def test_reports_counts_and_topup_rounds(self, mock_openai, mock_emit):
         mock_openai.side_effect = [
             _quiz_payload(_question("Q1?")),
-            _quiz_payload(_question("Q2?"), _question("Q3?")),
+            _quiz_payload(_question("Q1?")),
+            _quiz_payload(_question("Q2?")),
+            _quiz_payload(_question("Q3?")),
         ]
 
         generate_quiz_from_text("Short source text.", num_questions=3)

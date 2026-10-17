@@ -1,8 +1,8 @@
 import io
 import json
 import wave
-from pathlib import Path
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest
@@ -782,9 +782,7 @@ def test_practice_uses_stored_source_and_rejects_another_user(
     assert stored == source
     assert practice_call.kwargs["difficulty"] == "hard"
 
-    detail = client.get(
-        f"/api/v1/study-topics/{topic_id}", headers=auth_token
-    ).json()
+    detail = client.get(f"/api/v1/study-topics/{topic_id}", headers=auth_token).json()
     assert detail["has_source"] is True
     assert {quiz["title"] for quiz in detail["quizzes"]} == {
         "Rivers",
@@ -793,11 +791,57 @@ def test_practice_uses_stored_source_and_rejects_another_user(
     assert {quiz["question_count"] for quiz in detail["quizzes"]} == {1}
 
 
+@patch("main.generate_quiz_from_text")
+def test_study_topic_reports_how_far_quizzes_reach(mock_generate_quiz, auth_token):
+    content = " ".join(f"Sentence {index} about rivers." for index in range(800))
+    saved = client.post(
+        "/api/v1/study-topics",
+        headers=auth_token,
+        data={"content": content, "topic": "Rivers"},
+    ).json()
+    assert saved["section_count"] > 4
+    assert saved["sections_quizzed"] == 0
+
+    db = TestingSessionLocal()
+    try:
+        stored = db.query(StudyTopic).filter(StudyTopic.id == saved["id"]).one()
+        assert "Sentence 799 about rivers." in stored.source_text
+    finally:
+        db.close()
+
+    mock_generate_quiz.return_value = GeneratedQuiz(
+        title="Rivers check",
+        topic="Rivers",
+        questions=[
+            {
+                "question": "What is sentence 10 about?",
+                "options": ["Rivers", "Mountains", "Clouds", "Lava"],
+                "correct_answer": 0,
+            },
+            {
+                "question": "What is sentence 11 about?",
+                "options": ["Rivers", "Deserts", "Caves", "Dunes"],
+                "correct_answer": 0,
+            },
+        ],
+    )
+    practiced = client.post(
+        f"/api/v1/study-topics/{saved['id']}/practice",
+        headers=auth_token,
+        json={"num_questions": 2, "difficulty": "medium"},
+    )
+    assert practiced.status_code == 200
+
+    detail = client.get(
+        f"/api/v1/study-topics/{saved['id']}", headers=auth_token
+    ).json()
+    assert detail["section_count"] == saved["section_count"]
+    assert detail["sections_quizzed"] == 2
+
+
 def test_study_topic_without_source_reports_no_source(auth_token):
     topic_id = _save_topic_without_source()
-    detail = client.get(
-        f"/api/v1/study-topics/{topic_id}", headers=auth_token
-    ).json()
+    detail = client.get(f"/api/v1/study-topics/{topic_id}", headers=auth_token).json()
     assert detail["has_source"] is False
     assert detail["quizzes"] == []
 

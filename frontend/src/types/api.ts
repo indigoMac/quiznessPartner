@@ -95,6 +95,8 @@ export interface StudyTopicDetail {
   source_url?: string | null;
   can_practice: boolean;
   has_source: boolean;
+  section_count: number;
+  sections_quizzed: number;
   quizzes: QuizSummary[];
 }
 
